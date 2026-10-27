@@ -225,7 +225,10 @@ void MT29F4G08::WriteData(u8 data) {
 }
 
 u32 MT29F4G08::PageWrite(const u8* data, u32 length) {
-    u32 column = GetColumnAddress();
+    // An invalid NAND column can exceed the 2048+64-byte page buffer.
+    // Check before subtracting: unsigned underflow would permit an OOB write.
+    if (dataOffset >= PAGE_TOTAL_SIZE) return 0;
+
     u32 maxWrite = std::min(length, PAGE_TOTAL_SIZE - dataOffset);
     for (u32 i = 0; i < maxWrite; ++i) {
         programBuffer[dataOffset + i] &= data[i];
@@ -235,8 +238,11 @@ u32 MT29F4G08::PageWrite(const u8* data, u32 length) {
 }
 
 u32 MT29F4G08::PageRead(u8* data, u32 length) {
+    // As for writes, a column outside the page has no readable bytes.
+    if (dataOffset >= PAGE_TOTAL_SIZE) return 0;
+
     u32 readLen = std::min(length, PAGE_TOTAL_SIZE - dataOffset);
-    std::memcpy(data, pageBuffer.data() + dataOffset, readLen);
+    if (readLen) std::memcpy(data, pageBuffer.data() + dataOffset, readLen);
     dataOffset += readLen;
     return readLen;
 }
