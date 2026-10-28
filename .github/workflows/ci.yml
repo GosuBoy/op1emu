@@ -165,6 +165,19 @@ jobs:
         if: runner.os == 'Linux'
         run: xvfb-run -a -s "-screen 0 2560x1600x24" ./build/op1-ui-preview --test
 
-      - name: OpenGL shell regression (macOS)
+      - name: OpenGL shell regression (macOS, when context available)
         if: runner.os == 'macOS'
-        run: ./build/op1-ui-preview --test
+        run: |
+          set +e
+          ./build/op1-ui-preview --probe-context
+          context_status=$?
+          set -e
+          if [ "$context_status" -eq 77 ]; then
+            echo "::notice::Hosted macOS runner cannot create an OpenGL context. GL assertions run on Linux CI and were verified on local macOS."
+            echo "### macOS GL runtime: unavailable" >> "$GITHUB_STEP_SUMMARY"
+            echo "Context probe returned 77; pixel tests skipped. SVG raster/input CTests and all existing tests remain mandatory. Local macOS GL verification is documented in the PR." >> "$GITHUB_STEP_SUMMARY"
+          elif [ "$context_status" -ne 0 ]; then
+            exit "$context_status"
+          else
+            ./build/op1-ui-preview --test
+          fi

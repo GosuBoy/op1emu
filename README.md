@@ -255,4 +255,7 @@ Firmware-free visual tools, built by `OP1_BUILD_UI_TESTS`:
 The shell preview uses a four-color **test framebuffer**, opens no firmware or
 audio, and can also run interactively. The OpenGL test needs a desktop session
 (or `xvfb-run -a` on Linux); rasterizer/input CTests need no window.
+Hosted macOS CI probes context availability and explicitly reports a skipped GL
+runtime check when its VM cannot provide one; Linux CI runs the GL assertions
+under Xvfb. The macOS GL runtime was also verified on the local arm64 desktop.
 See the [visual comparison and verification record](docs/visual-comparisons/resvg-frontend/README.md).

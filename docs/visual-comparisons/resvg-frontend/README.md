@@ -83,5 +83,10 @@ API is unavailable. It remains assigned to Linux in CI; its sources were not
 changed by this work.
 
 Actual firmware boot and hands-on musical control acceptance were not performed:
-no NAND/OTP/firmware was supplied. CI platform results are recorded in PR #6.
+no NAND/OTP/firmware was supplied. CI platform results are recorded in PR #6. Linux CI runs the full GL harness
+under Xvfb. The hosted macOS VM passed the SVG build and all 22 CTests but
+could not create a GLFW OpenGL window; CI now probes this capability and
+explicitly reports the GL runtime check as unavailable in that environment.
+Actual macOS GL assertions and the Retina captures passed on the local arm64
+desktop. No renderer assertion failure is converted into a context skip.
 The PR remains draft until those remaining acceptance checks are completed.

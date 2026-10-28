@@ -147,6 +147,22 @@ class UIPreview {
 };
 int main(int argc, char **argv) {
     try {
+        if (argc == 2 && std::string(argv[1]) == "--probe-context") {
+            // Capability probe only: renderer/assertion failures never skip.
+            glfwSetErrorCallback(
+                [](int code, const char *detail) { std::cerr << "GLFW " << code << ": " << detail << '\n'; });
+            if (!glfwInit())
+                return 77;
+            glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
+            auto *window = glfwCreateWindow(640, 480, "OpenGL capability probe", nullptr, nullptr);
+            if (!window) {
+                glfwTerminate();
+                return 77;
+            }
+            glfwDestroyWindow(window);
+            glfwTerminate();
+            return 0;
+        }
         return UIPreview::Run(argc, argv);
     } catch (const std::exception &e) {
         std::cerr << e.what() << '\n';
