@@ -5,15 +5,29 @@
 #include <string>
 #include <vector>
 
-struct UIPoint { double x = 0, y = 0; };
+struct UIPoint {
+    double x = 0, y = 0;
+};
 struct UIRegion {
     std::vector<UIPoint> polygon;
     bool Contains(UIPoint point) const;
 };
 using UIGpio = std::pair<int, int>;
-struct UIButton { std::string name; UIRegion region; UIGpio gpio; };
-struct UIEncoder { std::string name; UIRegion clockwise, counterClockwise; UIGpio a, b; unsigned phase = 0; };
-struct UIKey { std::string name; UIGpio gpio; };
+struct UIButton {
+    std::string name;
+    UIRegion region;
+    UIGpio gpio;
+};
+struct UIEncoder {
+    std::string name;
+    UIRegion clockwise, counterClockwise;
+    UIGpio a, b;
+    unsigned phase = 0;
+};
+struct UIKey {
+    std::string name;
+    UIGpio gpio;
+};
 struct UILayout {
     std::string background;
     double scale = 1;
@@ -23,7 +37,7 @@ struct UILayout {
     std::vector<UIEncoder> encoders;
     std::vector<UIKey> keys;
     UIRegion volumeUp, volumeDown;
-    static UILayout Load(const std::string& path);
+    static UILayout Load(const std::string &path);
 };
 struct UIFit {
     double scale, x, y;
@@ -31,19 +45,20 @@ struct UIFit {
     UIPoint ToArt(UIPoint logical) const;
 };
 // Homogeneous unit-square -> screen mapping; also covers skew/perspective panels.
-std::array<double, 16> UIScreenMatrix(const std::array<UIPoint, 4>& quad);
+std::array<double, 16> UIScreenMatrix(const std::array<UIPoint, 4> &quad);
 
 class UIPanelInput {
-public:
-    explicit UIPanelInput(UILayout& layout) : layout_(layout) {}
+  public:
+    explicit UIPanelInput(UILayout &layout) : layout_(layout) {}
     std::function<void(int, int, bool)> event;
     void Mouse(bool pressed, UIPoint point);
     void Key(int source, UIGpio gpio, bool pressed);
     void ReleaseAll();
     uint8_t Volume() const { return volume_; }
-private:
-    void SetSource(int source, const std::vector<UIGpio>& pins);
-    UILayout& layout_;
+
+  private:
+    void SetSource(int source, const std::vector<UIGpio> &pins);
+    UILayout &layout_;
     std::map<int, std::vector<UIGpio>> held_;
     uint8_t volume_ = 128;
 };

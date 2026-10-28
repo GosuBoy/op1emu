@@ -8,9 +8,12 @@
 #ifdef OP1_HAVE_RESVG
 #include <resvg.h>
 struct SvgBackgroundRenderer::Impl {
-    resvg_render_tree* tree = nullptr;
+    resvg_render_tree *tree = nullptr;
     resvg_size size{};
-    ~Impl() { if (tree) resvg_tree_destroy(tree); }
+    ~Impl() {
+        if (tree)
+            resvg_tree_destroy(tree);
+    }
 };
 #else
 struct SvgBackgroundRenderer::Impl {};
@@ -24,7 +27,7 @@ bool SvgBackgroundRenderer::Available() {
 #endif
 }
 size_t SvgBackgroundRenderer::BufferSize(uint32_t w, uint32_t h) {
-    // Limit both the destination and filter working surfaces at ordinary sizes.
+    // Bound the destination before multiplying or allocating.
     constexpr uint64_t maxPixels = 16 * 1024 * 1024;
     const uint64_t pixels = uint64_t(w) * h;
     if (!w || !h || w > 8192 || h > 8192 || pixels > maxPixels ||
@@ -32,13 +35,14 @@ size_t SvgBackgroundRenderer::BufferSize(uint32_t w, uint32_t h) {
         throw std::runtime_error("SVG raster size exceeds 8192px / 16 megapixel limit");
     return static_cast<size_t>(pixels * 4);
 }
-SvgBackgroundRenderer::SvgBackgroundRenderer(const std::string& path) : impl_(std::make_unique<Impl>()) {
+SvgBackgroundRenderer::SvgBackgroundRenderer(const std::string &path) : impl_(std::make_unique<Impl>()) {
 #ifdef OP1_HAVE_RESVG
     static std::once_flag logging;
     std::call_once(logging, resvg_init_log);
-    std::unique_ptr<resvg_options, decltype(&resvg_options_destroy)> options(
-        resvg_options_create(), resvg_options_destroy);
-    if (!options) throw std::runtime_error("Cannot allocate resvg options");
+    std::unique_ptr<resvg_options, decltype(&resvg_options_destroy)> options(resvg_options_create(),
+                                                                             resvg_options_destroy);
+    if (!options)
+        throw std::runtime_error("Cannot allocate resvg options");
     const auto absolute = std::filesystem::absolute(path);
     const auto resources = absolute.parent_path().string();
     resvg_options_set_resources_dir(options.get(), resources.c_str());
@@ -78,7 +82,7 @@ SvgPixels SvgBackgroundRenderer::Render(uint32_t width, uint32_t height) const {
     transform.a = transform.d = scale;
     transform.e = (width - Width() * scale) / 2;
     transform.f = (height - Height() * scale) / 2;
-    resvg_render(impl_->tree, transform, width, height, reinterpret_cast<char*>(result.rgba.data()));
+    resvg_render(impl_->tree, transform, width, height, reinterpret_cast<char *>(result.rgba.data()));
 #endif
     return result;
 }
