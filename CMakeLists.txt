@@ -5,6 +5,13 @@ set(CMAKE_CXX_STANDARD 17)
 
 include(FetchContent)
 
+# OFF preserves the Rust-free PNG/headless build. ON fails explicitly if its
+# pinned dependency cannot be built; at runtime an invalid SVG falls back to PNG.
+option(OP1_ENABLE_SVG "Build the resvg 0.49.0 vector frontend" OFF)
+if(OP1_ENABLE_SVG)
+    include(cmake/Resvg.cmake)
+endif()
+
 # Fetch spdlog
 message(STATUS "Fetching spdlog...")
 FetchContent_Declare(
