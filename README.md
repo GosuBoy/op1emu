@@ -20,6 +20,13 @@ cmake --build build
 ./build/op1emu path/to/nandflash.img path/to/te-boot.ldr
 ```
 
+## NAND provisioning (experimental)
+
+To create an op1emu NAND image containing the original OP-1 factory content,
+see [NAND provisioning](docs/nand-provisioning.md). This can use an official
+`.op1` update package or an unpacked `content/` directory and requires an
+external `mkyaffs2` utility. Provisioning content does not decrypt firmware.
+
 ## Headless operation
 
 Run from the repository root with the matching `otp.bin`:
