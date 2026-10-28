@@ -181,6 +181,7 @@ def main() -> None:
                         f.write(plaintext)
                 except BaseException:
                     args.output.unlink(missing_ok=True)
+                    args.ldr_output.unlink(missing_ok=True)
                     raise
                 print(f"Wrote decrypted LDR to {args.ldr_output}")
             print(f"Wrote {pages} YAFFS2 pages to {args.output} at block {args.start_block}")
