@@ -82,11 +82,59 @@ on local macOS it produced 125 passed, 56 failed, 2 errors, chiefly because that
 API is unavailable. It remains assigned to Linux in CI; its sources were not
 changed by this work.
 
-Actual firmware boot and hands-on musical control acceptance were not performed:
-no NAND/OTP/firmware was supplied. CI platform results are recorded in PR #6. Linux CI runs the full GL harness
+The first verification used synthetic frames. A subsequent explicitly authorized
+local firmware-246 session verified actual boot and representative live controls
+(see below). CI platform results are recorded in PR #6. Linux CI runs the full GL harness
 under Xvfb. The hosted macOS VM passed the SVG build and all 22 CTests but
 could not create a GLFW OpenGL window; CI now probes this capability and
 explicitly reports the GL runtime check as unavailable in that environment.
 Actual macOS GL assertions and the Retina captures passed on the local arm64
 desktop. No renderer assertion failure is converted into a context skip.
-The PR remains draft until those remaining acceptance checks are completed.
+The PR remains draft for user review and broader musical/audio acceptance.
+
+
+## Live firmware follow-up
+
+After the user supplied [PR #3](https://github.com/GosuBoy/op1emu/pull/3) as a
+loading reference and explicitly approved execution, existing local inputs were
+found and tested. The Downloads LDR matched the locally recorded canonical
+plaintext firmware-246 hash.
+The existing provisioned golden NAND was opened with `--nand-snapshot`, and a
+separate byte-identical OTP copy was used in a private temporary run directory.
+The source NAND, LDR and OTP hashes were checked after clean shutdown and were
+unchanged. No firmware, NAND, OTP or private research files are committed.
+
+The Release binary was placed in a temporary macOS `.app` bundle solely so the
+desktop capture/control tool could select it. Both the plain executable and
+bundled executable booted. Runtime options were `--ui=svg --nand-snapshot
+--deterministic`; the latter makes guest playback faster than wall time.
+
+The live test exposed a native window-sharing input issue: GLFW cursor-position
+events correctly followed the synthetic pointer, but `glfwGetCursorPos` returned
+the same stale global position for different clicks. Hit testing now uses the
+latest cursor event, with a query fallback before the first event and cache
+invalidation on focus loss. Temporary diagnostic logging was removed. A GL
+regression invokes the cursor/button callbacks with independent event coordinates
+and verifies Synth GPIO press, release outside and focus invalidation.
+
+Observed live results:
+
+- Firmware boot reached the Tape screen; the live RGB565 content was upright,
+  sharp and aligned with the SVG bezel.
+- Synth, Tape and Drum clicks changed the firmware UI. The window was resized
+  during the session; the screen and controls stayed aligned.
+- Play changed the icon and advanced the tape counter; Stop cleared Play and
+  held the counter.
+- Clockwise blue encoder steps changed the Drum parameter from `F2 +0` to
+  `F2 +1`; counterclockwise steps restored `+0`.
+- Both directions of all four encoders, all four encoder pushes, Shift (mouse
+  and keyboard modifier), volume up/down and a press/drag/release outside were
+  exercised. Not every action has an independently measured firmware parameter;
+  exhaustive GPIO/volume-state assertions remain the automated tests' coverage.
+- The host audio device initialized successfully. Audible correctness, latency,
+  exhaustive note combinations and physical-device behavior were not measured.
+
+Live firmware captures were retained privately for the user. They show Synth,
+Tape playback, Drum, and a blue-encoder parameter change. They are not included
+in this public repository. The earlier committed color-screen captures remain
+firmware-free diagnostic images.

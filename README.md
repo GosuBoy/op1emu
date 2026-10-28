@@ -240,7 +240,8 @@ are capped at 8192 per axis / 16 megapixels; very large windows use the cached
 texture at that bounded resolution. Control regions can be `[x,y,width,height]`
 rectangles or ordered convex point polygons. `display.quad` is TL, TR, BR, BL;
 coordinates refer to the SVG's intrinsic pixel viewport **after** viewBox mapping.
-GPIO entries retain the original panel wiring.
+GPIO entries retain the original panel wiring. Mouse hit testing uses GLFW cursor
+events, including native window-sharing input whose global cursor query may lag.
 
 Firmware-free visual tools, built by `OP1_BUILD_UI_TESTS`:
 
