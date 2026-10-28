@@ -193,7 +193,15 @@ add_custom_target(op1-build-info
     BYPRODUCTS ${OP1_BUILD_INFO_H}
     COMMENT "Recording the build's revision")
 
+add_library(op1-svg gui/svg_background_renderer.cpp)
+target_include_directories(op1-svg PUBLIC gui)
+if(OP1_ENABLE_SVG)
+    target_compile_definitions(op1-svg PRIVATE OP1_HAVE_RESVG)
+    target_link_libraries(op1-svg PRIVATE op1-resvg)
+endif()
+
 file(GLOB_RECURSE SOURCES gui/*.cpp)
+list(FILTER SOURCES EXCLUDE REGEX "/gui/svg_background_renderer.cpp$")
 add_executable(op1emu ${SOURCES})
 add_dependencies(op1emu op1-build-info)
 target_include_directories(op1emu PRIVATE ${OP1_BUILD_INFO_DIR})
@@ -201,7 +209,7 @@ target_include_directories(op1emu PRIVATE ${OP1_BUILD_INFO_DIR})
 if(OP1_MIMALLOC)
     target_link_libraries(op1emu PRIVATE mimalloc-static)
 endif()
-target_link_libraries(op1emu PRIVATE emulator glfw OpenGL::GL nlohmann_json::nlohmann_json uvw ext Threads::Threads ${CMAKE_DL_LIBS})
+target_link_libraries(op1emu PRIVATE op1-svg emulator glfw OpenGL::GL nlohmann_json::nlohmann_json uvw ext Threads::Threads ${CMAKE_DL_LIBS})
 target_include_directories(op1emu PRIVATE ${stb_SOURCE_DIR} ${miniaudio_SOURCE_DIR})
 
 option(OP1_BUILD_HEADLESS_TESTS "Build headless frontend regressions" OFF)
