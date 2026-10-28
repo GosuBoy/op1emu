@@ -197,3 +197,62 @@ attach is refused as busy until it detaches, and a list does not disturb it.
 ## Acknowledgements
 - [bfin_sim](https://github.com/op1emu/bfin_sim) - Blackfin simulator used for CPU emulation, from gdb/sim.
 - [op1kenobi](https://github.com/alexmandelshtam/op1kenobi) - OP-1 screenshot assets used for the GUI background.
+
+## SVG front panel (optional)
+
+The default remains `gui/ui.png` / `gui/ui.json`. Enable the vector renderer with
+Rust 1.91.1 (CI's pinned version; upstream requires at least 1.85) and Cargo:
+
+```bash
+rustup toolchain install 1.91.1 --profile minimal
+rustup default 1.91.1
+cmake -S . -B build -GNinja -DCMAKE_BUILD_TYPE=Release \
+  -DOP1_ENABLE_SVG=ON -DOP1_BUILD_UI_TESTS=ON \
+  -DOP1_BUILD_HEADLESS_TESTS=ON -DOP1_BUILD_DMA_TESTS=ON
+cmake --build build
+ctest --test-dir build --output-on-failure
+./build/op1emu nand.bin --ui=svg
+```
+
+`--ui=png` selects the original panel. `--ui-config PATH` loads another layout;
+background paths are relative to that JSON file. Missing/malformed SVGs,
+invalid layouts, and SVG-disabled builds report the problem and use the PNG
+panel with its own matching control map. Run from the repository root so the
+bundled fallback can be found. `--headless` ignores the graphical selection.
+`-DOP1_ENABLE_SVG=OFF` (default) requires no Rust or resvg download.
+
+CMake fetches the exact resvg 0.49.0 commit and builds **resvg-capi** statically
+with `cargo build --release --locked`; artifacts stay under `build/resvg-target`.
+Native Linux x86_64 and macOS arm64 builds are supported; universal/cross builds
+are rejected explicitly. System fonts are loaded for custom SVG text. The
+bundled artwork has outlined labels and no external image dependencies.
+
+The supplied `gui/op1.svg` is preserved byte for byte (redistribution authorized
+by its provider). Its screen is already blank. The live display still comes
+from the firmware's portrait RGB565 PPI/DMA framebuffer, rotated clockwise and
+mapped onto the configured screen quad. Without a frame, the screen is black.
+No firmware, NAND or OTP data is included.
+
+Artwork is rasterized into premultiplied RGBA at physical framebuffer resolution,
+with a 120 ms quiet period after size changes. Window and mouse coordinates
+remain logical pixels, with aspect-preserving letterboxing. Raster dimensions
+are capped at 8192 per axis / 16 megapixels; very large windows use the cached
+texture at that bounded resolution. Control regions can be `[x,y,width,height]`
+rectangles or ordered convex point polygons. `display.quad` is TL, TR, BR, BL;
+coordinates refer to the SVG's intrinsic pixel viewport **after** viewBox mapping.
+GPIO entries retain the original panel wiring.
+
+Firmware-free visual tools, built by `OP1_BUILD_UI_TESTS`:
+
+```bash
+./build/op1-svg-render gui/op1.svg 1204 434 panel-1x.png
+./build/op1-svg-render gui/op1.svg 2408 868 panel-2x.png
+./build/op1-ui-preview --test
+./build/op1-ui-preview gui/ui-svg.json shell.png
+./build/op1-ui-preview gui/ui.json
+```
+
+The shell preview uses a four-color **test framebuffer**, opens no firmware or
+audio, and can also run interactively. The OpenGL test needs a desktop session
+(or `xvfb-run -a` on Linux); rasterizer/input CTests need no window.
+See the [visual comparison and verification record](docs/visual-comparisons/resvg-frontend/README.md).

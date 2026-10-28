@@ -1,6 +1,11 @@
 # Work session: resvg-backed SVG front panel for op1emu
 
-**Status: handoff/specification only.** This document is not an implementation.
+**Status: implemented on `feature/resvg-svg-ui`; firmware acceptance remains pending.**
+The user supplied `op1.svg` as the replacement artwork and authorized its public
+redistribution. See [verification and visual comparisons](../visual-comparisons/resvg-frontend/README.md)
+and the README's SVG build/run instructions. The specification below is retained
+as the original acceptance record. The PR stays draft: firmware boot and manual
+musical input acceptance have not been claimed.
 Use branch `feature/resvg-svg-ui` in `GosuBoy/op1emu`; do not work on `main` or modify unrelated open PRs. Replace this checklist with implementation commits on the same branch, retaining a clear reviewable history. The draft PR may be marked ready for review only after the acceptance criteria below pass.
 
 ## Goal
