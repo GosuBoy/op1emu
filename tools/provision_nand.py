@@ -170,6 +170,8 @@ def main() -> None:
             if decrypt_requested:
                 otp_key = (fetch_public_otp_key() if args.fetch_otp else read_otp(args.otp))
                 plaintext = decrypt_ldr((root / "OP1_vdk.ldr").read_bytes(), otp_key)
+                # NAND provisioning contains only content/, not the encrypted LDR.
+                (root / "OP1_vdk.ldr").unlink()
             interleaved = work / "content.yaffs2"
             build_yaffs(root, interleaved, args.mkyaffs2)
             pages = provision(interleaved, args.output, args.start_block)
