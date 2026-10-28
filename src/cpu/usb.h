@@ -41,6 +41,13 @@ public:
     virtual void HandleSetupPacket(USBSetupBytes setup, const u8* data, std::size_t length, ReplyCallback callback) = 0;
     virtual void HandleDataWrite(int ep, int interval, const u8* data, std::size_t length, WriteDoneCallback callback) = 0;
     virtual void HandleDataRead(int ep, int interval, std::size_t limit, ReplyCallback callback) = 0;
+    // The firmware has enabled the controller and connected to the bus (SOFT_CONN).
+    // A host cannot enumerate the device before that: nothing answers its requests.
+    virtual bool IsConnected() const { return true; }
+    // No control transfer is waiting on EP0 or under way. A setup sent before
+    // the last one is answered queues behind it, and the answer goes to the
+    // later one's callback.
+    virtual bool ControlIdle() { return true; }
 };
 
 
@@ -103,6 +110,11 @@ public:
     void HandleDataWrite(int ep, int interval, const u8* data, std::size_t length, WriteDoneCallback callback) override;
     void HandleDataRead(int ep, int interval, std::size_t limit, ReplyCallback callback) override;
 
+    bool IsConnected() const override {
+        return enabled.load(std::memory_order_relaxed) && connected.load(std::memory_order_relaxed);
+    }
+    bool ControlIdle() override;
+
     void ProcessWithInterrupt(int ivg) override;
     // ProcessWithInterrupt() has work: the USB is enabled (GLOBAL_ENA), and
     // the guest accessed it or the host sent a request since the last call.
@@ -110,10 +122,10 @@ public:
     // loop), after the request is visible to NeedsService().
     void SetHostRequestCallback(std::function<void()> callback) { onHostRequest_ = std::move(callback); }
     bool NeedsService() const {
-        return enabled && (touched_ || hostRequest_.load(std::memory_order_acquire));
+        return enabled.load(std::memory_order_relaxed) && (touched_ || hostRequest_.load(std::memory_order_acquire));
     }
     // The host's half of that: a request came in from the USB/IP loop.
-    bool HostRequestPending() const { return enabled && hostRequest_.load(std::memory_order_acquire); }
+    bool HostRequestPending() const { return enabled.load(std::memory_order_relaxed) && hostRequest_.load(std::memory_order_acquire); }
 
     u32 Read32(u32 offset) override {
         touched_ = true;
@@ -144,8 +156,9 @@ protected:
         if (onHostRequest_) onHostRequest_();
     }
 
-    // Connection state
-    bool connected = false;
+    // Connection state. It and `enabled` are written by the guest on the CPU
+    // thread and read by the USB/IP loop (IsConnected()).
+    std::atomic<bool> connected{false};
 
     // Common registers
     u8 funcAddr = 0;
@@ -172,7 +185,7 @@ protected:
     bool rxIntsToINT2 = false;
     bool txIntsToINT2 = true;
 
-    bool enabled = false;
+    std::atomic<bool> enabled{false};
     u8 epTxEnabled = 0x1;
     u8 epRxEnabled = 0x1;
 

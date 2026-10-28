@@ -151,7 +151,11 @@ microseconds, the clock `perf record -k mono` uses.
 - With tiered compilation (bcore's `Core::set_tiering`, `--tier-threshold`,
   on by default at 30000) every block is compiled at tier 0 first and again
   at tier 1 once it started that many times; `args.tier` says which (absent
-  untiered). A promotion compiled on bcore's worker thread
+  untiered). A block of more than `--tier-size-ref` packets (default 16; 0
+  for none) waits as many times longer as it has packets more: a tier-0
+  span's `args.tier_threshold` is its block's. Promotions other than loop
+  blocks take bcore's light IR pipeline (`--tier1-pipeline light`, the
+  default; `o1` for the full one). A promotion compiled on bcore's worker thread
   (`Core::set_tier_background`, on by default; `--no-tier-background`)
   makes two `translate` spans on the CPU thread, `args.part` `lift` (the
   module, no code yet: it counts as compile time, not as a translation) and
@@ -173,18 +177,32 @@ microseconds, the clock `perf record -k mono` uses.
   `Core::set_copy_patch`, on by default; `--no-copy-patch`) is copied
   together from them in microseconds: its `translate` span has
   `args.copy_patch` true, `args.terminator` `copy-patch`, no IR
-  (`ir_insns` 0), `object_bytes` its code and `object_hash` one over its
-  stencils' code, relocations and hole values (so `diff compile` compares
-  such blocks too), and its
+  (`ir_insns` 0), `object_bytes` its code (its cold part's included) and
+  `object_hash` one over its stencils' code, relocations and hole values
+  (so `diff compile` compares such blocks too), and its
   nested `lift` span holds the whole translation. In the code map its
-  variant is 1. With `--perf-jitdump` bcore writes these blocks (named
-  `bb_0x<pc>` as LLVM's tier-0 blocks are) to a jitdump of its own beside
+  variant is 1. The stencils are split as LLVM's blocks are: a block is
+  their hot parts one after the other, ending in a chain exit of its own
+  that runs the block again without the chain table when it goes on to
+  itself, and their cold parts lie apart. With `--perf-jitdump` bcore
+  writes these blocks (named `bb_0x<pc>` as LLVM's tier-0 blocks are, and
+  `bb_0x<pc>.cold`) to a jitdump of its own beside
   LLVM's, in `.debug/jit/bcore-cp-*`, with the code each arena shares:
-  `bcore_cp_exit`, the chain exit of every such block, and
+  `bcore_cp_exit`, the chain exit of a block that has none of its own (dry
+  runs, no chaining), and
   `bcore_cp_jump_<helper>`, its calls' jumps to the helpers. `op1prof
   report` counts both as generated code (the bucket and the `generated
   code (self)` share) in a table of their own, `generated code no block
   owns`, not as host symbols.
+- Every instruction has stencils built with the emulator: the 16-bit ones,
+  every 32-bit one (register fields as holes), and a parallel packet as its
+  pieces (each slot, slot 0's instruction alone, the slots' commits, the
+  packet's tail). A block with a packet that has none (an illegal parallel
+  packet, SEARCH in slot 0) compiles with LLVM, and `op1prof compile`
+  reports the blocks of stencils and the tier-0 blocks LLVM still
+  compiled. Nothing is compiled for them at run time any more: on the boot
+  to the main display the CPU thread's compile time went 5.25 to 0.45 s
+  (the 8,602 packets whose stencils LLVM built at -O0, 2026-10).
 - Marks (category `mark`) are instant events carrying the same counters as the
   `[mark]` line (including `invalidations`, the cache flushes so far), with `args.thread_cpu_ns`, `args.process_cpu_ns`,
   `args.irq_levels` (entries per IVG level, 0 = EMU ... 15 = IVG15) and

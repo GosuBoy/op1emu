@@ -53,13 +53,13 @@ public:
         SetChaining(chain);
     }
     CoreTimer& Timer() { return *coreTimer; }
-    CpuState& State() { return *cpuState_; }
+    bcore::CpuState& State() { return *cpuState_; }
     GPTimer& GpTimer() { return *gptimer; }
     // Guest time goes on by packets with no host work, or with it after,
     // between runs: CpuState's CEC flag bound as Core::run binds it.
     void Retire(uint64_t packets) { time_.Retire(packets); }
     void HostWorkNow() {
-        cpuState_->cec_pending = &bcore_cec_pending;
+        cpuState_->cec_pending = &bcore::bcore_cec_pending;
         HostWork(false);
     }
 };
@@ -122,10 +122,10 @@ static Outcome Scenario(bool chain, Loop loop, uint64_t dueNs, bool timer, bool 
     Write(emu, kCode, kPrologue);
     Write(emu, kIvg15, kIvg15Entry);
     Write(emu, kIvg15 + 2 * kIvg15Entry.size(), Code(loop));
-    evt_write(EVT_BASE + 4 * 15, kIvg15);
-    const uint32_t imask = CEC_MMR_BASE + 4 * CEC_IDX_IMASK;
+    bcore::evt_write(bcore::EVT_BASE + 4 * 15, kIvg15);
+    const uint32_t imask = bcore::CEC_MMR_BASE + 4 * bcore::CEC_IDX_IMASK;
     const uint32_t ivgs = 1u << 15 | (timer ? 1u << 6 : 0);
-    cec_mmr_write(&cpu.State(), imask, cec_mmr_read(&cpu.State(), imask) | ivgs);
+    bcore::cec_mmr_write(&cpu.State(), imask, bcore::cec_mmr_read(&cpu.State(), imask) | ivgs);
     // The packets at which the hook's events ran, hashed.
     uint64_t hookEvents = 0;
     if (loop == Loop::Hooked) {
@@ -148,7 +148,7 @@ static Outcome Scenario(bool chain, Loop loop, uint64_t dueNs, bool timer, bool 
     if (timer) {
         // Every expiry enters the ISR, at the packet the host latches it.
         Write(emu, kIsr, kIsrCode);
-        evt_write(EVT_BASE + 4 * 6, kIsr);
+        bcore::evt_write(bcore::EVT_BASE + 4 * 6, kIsr);
         cpu.Timer().Write32(0x04, 11);  // TPERIOD
         cpu.Timer().Write32(0x00, 7);   // TMPWR | TMREN | TAUTORLD
     }
@@ -170,7 +170,8 @@ static Outcome Scenario(bool chain, Loop loop, uint64_t dueNs, bool timer, bool 
                 "an IDLE lets guest time pass without packets, CYCLES included");
     const auto& s = cpu.State();
     return {{cpu.Time().Packets(), s.dpregs[0], s.dpregs[1], s.dpregs[2], s.dpregs[3], s.dpregs[4], hookEvents,
-             cpu.Timer().Read32(0x0C), cec_mmr_read(&cpu.State(), CEC_MMR_BASE + 4 * CEC_IDX_ILAT)},
+             cpu.Timer().Read32(0x0C),
+             bcore::cec_mmr_read(&cpu.State(), bcore::CEC_MMR_BASE + 4 * bcore::CEC_IDX_ILAT)},
             runs};
 }
 
@@ -188,16 +189,17 @@ static void IdleTakesItsInterrupt() {
     Write(emu, kIvg15, entry);
     Write(emu, kIdle, {0x0020, 0x2000});  // IDLE; JUMP.S 0
     Write(emu, kIsr, {0x640b, 0x2000});   // R3 += 1; JUMP.S 0
-    evt_write(EVT_BASE + 4 * 15, kIvg15);
-    evt_write(EVT_BASE + 4 * 7, kIsr);
-    cec_mmr_write(&cpu.State(), CEC_MMR_BASE + 4 * CEC_IDX_IMASK, 0xffff);
+    bcore::evt_write(bcore::EVT_BASE + 4 * 15, kIvg15);
+    bcore::evt_write(bcore::EVT_BASE + 4 * 7, kIsr);
+    bcore::cec_mmr_write(&cpu.State(), bcore::CEC_MMR_BASE + 4 * bcore::CEC_IDX_IMASK, 0xffff);
     emu.MemoryWrite32(0xFFC00124, 0);  // SIC_IWR0
     emu.MemoryWrite32(0xFFC00164, 0);  // SIC_IWR1
     cpu.SetPC(kCode);
     for (unsigned i = 0; cpu.State().pc != kIdle && i < 10; ++i) cpu.Run();
     Require(cpu.State().pc == kIdle, "the guest reaches its IDLE");
     uint64_t raised = 0;
-    cpu.QueueEvent([&] { raised = cpu.Time().Cycles(); cec_raise(&cpu.State(), 7); }, std::chrono::nanoseconds(1));
+    cpu.QueueEvent([&] { raised = cpu.Time().Cycles(); bcore::cec_raise(&cpu.State(), 7); },
+                   std::chrono::nanoseconds(1));
     cpu.Run();
     Require(raised && cpu.State().pc == kIsr, "the host's event raises IVG7, and its ISR is next");
     Require(cpu.Time().Cycles() == raised, "an IDLE woken by the interrupt taken after its block waits no more");
@@ -210,26 +212,48 @@ static void IdleTakesItsInterrupt() {
 // (it ends that wait early, as a wakeup without an interrupt would).
 static void RealTimeIdleKeepsToTheHostClock() {
     using Clock = std::chrono::steady_clock;
+    using namespace std::chrono_literals;
     constexpr uint64_t kDueNs = 30000000, kKeyNs = 10000000;
-    const auto deterministic = Scenario(true, Loop::Idle, kDueNs, false);
+    // The RTC's next second is a due time, which ends an IDLE's wait: both
+    // modes start its calendar alike, real-time mode's own epoch being the
+    // host's. On a whole second the 30 ms cross none; just over 10 ms before
+    // one they cross it off the GP timers' ticks, and the loop goes round
+    // once more.
+    const std::chrono::system_clock::time_point second{std::chrono::seconds(TimeSource::kDefaultEpochSeconds)};
+    uint64_t rounds[2] = {};
     Clock::time_point start;
-    const auto paced = Scenario(true, Loop::Idle, kDueNs, false, false, [&](TestCpu&) { start = Clock::now(); });
-    const auto took = std::chrono::duration_cast<std::chrono::nanoseconds>(Clock::now() - start).count();
-    Require(took >= int64_t(kDueNs) - 2000000, "30 ms of guest time take about 30 ms on the host's clock");
-    Require(paced.state == deterministic.state, "real-time mode executes what deterministic mode does");
+    for (const auto epoch : {second, second + 1s - 10ms - 3us}) {
+        const auto at = [epoch](TestCpu& cpu) { cpu.SetRtcEpoch(epoch); };
+        const auto deterministic = Scenario(true, Loop::Idle, kDueNs, false, true, at);
+        const auto paced = Scenario(true, Loop::Idle, kDueNs, false, false, [&](TestCpu& cpu) {
+            at(cpu);
+            start = Clock::now();
+        });
+        const auto took = std::chrono::duration_cast<std::chrono::nanoseconds>(Clock::now() - start).count();
+        Require(took >= int64_t(kDueNs) - 2000000, "30 ms of guest time take about 30 ms on the host's clock");
+        Require(paced.state == deterministic.state, "real-time mode executes what deterministic mode does");
+        rounds[epoch != second] = deterministic.state[1];
+    }
+    Require(rounds[1] == rounds[0] + 1, "the RTC's next second wakes the idle loop once more");
 
+    // From when the key is queued, not when the thread meant to queue it:
+    // a sleeping thread wakes late on a loaded host (a macOS CI runner's
+    // overslept by more than the slack).
     std::thread key;
-    std::atomic<int64_t> keyedNs{-1};
+    std::atomic<int64_t> keyedNs{-1}, queuedNs{-1};
     Scenario(true, Loop::Idle, kDueNs, false, false, [&](TestCpu& cpu) {
         start = Clock::now();
         key = std::thread([&] {
             std::this_thread::sleep_until(start + std::chrono::nanoseconds(kKeyNs));
+            queuedNs = std::chrono::duration_cast<std::chrono::nanoseconds>(Clock::now() - start).count();
             cpu.QueueEvent([&] { keyedNs = int64_t(cpu.Time().Nanoseconds()); });
         });
         // A late key thread holds the CPU up here rather than outliving it.
         cpu.QueueEvent([&] { key.join(); }, std::chrono::nanoseconds(kDueNs - 1000000));
     });
-    Require(keyedNs >= 0 && keyedNs < int64_t(kKeyNs) + 6000000, "the key arrives within a few ms of its wall time");
+    if (!(keyedNs >= 0 && keyedNs < queuedNs + 6000000))
+        std::fprintf(stderr, "key queued at %.3f ms, reached the guest at %.3f ms\n", queuedNs / 1e6, keyedNs / 1e6);
+    Require(keyedNs >= 0 && keyedNs < queuedNs + 6000000, "the key arrives within a few ms of its wall time");
 }
 
 // TMRCLK (TIMER7's output, ~5.7 MHz) is counted at the host's work, many

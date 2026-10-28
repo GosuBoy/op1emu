@@ -11,6 +11,7 @@ FetchContent_Declare(
     spdlog
     GIT_REPOSITORY https://github.com/gabime/spdlog.git
     GIT_TAG v1.11.0
+    GIT_SHALLOW TRUE
     DOWNLOAD_EXTRACT_TIMESTAMP TRUE
 )
 FetchContent_MakeAvailable(spdlog)
@@ -26,6 +27,7 @@ FetchContent_Declare(
     glfw
     GIT_REPOSITORY https://github.com/glfw/glfw.git
     GIT_TAG        3.3.8
+    GIT_SHALLOW    TRUE
     DOWNLOAD_EXTRACT_TIMESTAMP TRUE
 )
 FetchContent_MakeAvailable(glfw)
@@ -38,6 +40,7 @@ FetchContent_Declare(
     json
     GIT_REPOSITORY https://github.com/nlohmann/json.git
     GIT_TAG v3.12.0
+    GIT_SHALLOW TRUE
     DOWNLOAD_EXTRACT_TIMESTAMP TRUE
 )
 FetchContent_MakeAvailable(json)
@@ -49,6 +52,7 @@ FetchContent_Declare(
     stb
     GIT_REPOSITORY https://github.com/nothings/stb.git
     GIT_TAG master
+    GIT_SHALLOW TRUE
     DOWNLOAD_EXTRACT_TIMESTAMP TRUE
 )
 FetchContent_MakeAvailable(stb)
@@ -59,6 +63,7 @@ message(STATUS "Fetching cqueue...")
 FetchContent_Declare(cqueue
   GIT_REPOSITORY https://github.com/torrentg/cqueue.git
   GIT_TAG        1.0.6
+  GIT_SHALLOW    TRUE
 )
 FetchContent_MakeAvailable(cqueue)
 message(STATUS "cqueue fetched successfully")
@@ -71,9 +76,14 @@ FetchContent_Declare(
     uvw
     GIT_REPOSITORY https://github.com/skypjack/uvw.git
     GIT_TAG        v3.4.0_libuv_v1.48
+    GIT_SHALLOW    TRUE
     DOWNLOAD_EXTRACT_TIMESTAMP TRUE
 )
 set(BUILD_UVW_LIBS ON CACHE BOOL "" FORCE)
+# libuv's include(CTest) would turn BUILD_TESTING on, and with it uvw's own
+# tests (googletest downloaded, built and registered with op1emu's). op1emu's
+# tests do not use it.
+set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(uvw)
 message(STATUS "uvw fetched successfully")
 
@@ -82,7 +92,8 @@ message(STATUS "Fetching miniaudio...")
 FetchContent_Declare(
     miniaudio
     GIT_REPOSITORY https://github.com/mackron/miniaudio.git
-    GIT_TAG 0.11.21
+    GIT_TAG 0.11.25
+    GIT_SHALLOW TRUE
     DOWNLOAD_EXTRACT_TIMESTAMP TRUE
 )
 FetchContent_MakeAvailable(miniaudio)
@@ -92,8 +103,14 @@ message(STATUS "miniaudio fetched successfully")
 # value, machine instruction and MC fragment it makes while compiling a
 # block: with glibc's allocator, malloc and free were 8% of a boot's JIT
 # compilation, and mimalloc took 6% of its instructions away. OFF keeps the C
-# library's allocator.
-option(OP1_MIMALLOC "Link mimalloc as the process's malloc" ON)
+# library's allocator, the default on macOS, where a static override of malloc
+# goes through the system's malloc zones.
+if(APPLE)
+    set(OP1_MIMALLOC_DEFAULT OFF)
+else()
+    set(OP1_MIMALLOC_DEFAULT ON)
+endif()
+option(OP1_MIMALLOC "Link mimalloc as the process's malloc" ${OP1_MIMALLOC_DEFAULT})
 if(OP1_MIMALLOC)
     message(STATUS "Fetching mimalloc...")
     set(MI_OVERRIDE ON CACHE BOOL "" FORCE)
@@ -105,6 +122,7 @@ if(OP1_MIMALLOC)
         mimalloc
         GIT_REPOSITORY https://github.com/microsoft/mimalloc.git
         GIT_TAG v2.1.7
+        GIT_SHALLOW TRUE
         DOWNLOAD_EXTRACT_TIMESTAMP TRUE
     )
     FetchContent_MakeAvailable(mimalloc)
@@ -116,6 +134,10 @@ find_package(Threads REQUIRED)
 # Measurement build (docs/profiling.md). OFF compiles every profiling hook out
 # of the emulator and of bcore, so a normal build carries none of it.
 option(ENABLE_PROFILING "Build the profiling hooks: phase marks, trace, census, perf/jitdump" OFF)
+if(ENABLE_PROFILING AND NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    # perf_event_open, gettid and the perf JIT listener are Linux's.
+    message(FATAL_ERROR "ENABLE_PROFILING needs a Linux host")
+endif()
 set(BCORE_ENABLE_PROFILE ${ENABLE_PROFILING} CACHE BOOL "bcore observability API (follows ENABLE_PROFILING)" FORCE)
 set(BCORE_PERF_JIT_EVENTS ${ENABLE_PROFILING} CACHE BOOL "bcore jitdump support (follows ENABLE_PROFILING)" FORCE)
 if(ENABLE_PROFILING)
@@ -178,6 +200,9 @@ target_include_directories(op1emu PRIVATE ${stb_SOURCE_DIR} ${miniaudio_SOURCE_D
 option(OP1_BUILD_HEADLESS_TESTS "Build headless frontend regressions" OFF)
 if(OP1_BUILD_HEADLESS_TESTS)
     enable_testing()
+    add_executable(op1-ldr-parser-test tests/ldr_parser_test.cpp src/loader/ldr.cpp)
+    target_include_directories(op1-ldr-parser-test PRIVATE src)
+    add_test(NAME op1-ldr-parser-test COMMAND op1-ldr-parser-test)
     add_executable(op1-rtc-interrupt-test tests/rtc_interrupt_test.cpp)
     target_link_libraries(op1-rtc-interrupt-test PRIVATE emulator)
     add_test(NAME op1-rtc-interrupt-test COMMAND op1-rtc-interrupt-test)
@@ -193,6 +218,9 @@ if(OP1_BUILD_HEADLESS_TESTS)
     add_executable(op1-cpu-chain-test tests/cpu_chain_test.cpp)
     target_link_libraries(op1-cpu-chain-test PRIVATE emulator bfin-core Threads::Threads)
     add_test(NAME op1-cpu-chain-test COMMAND op1-cpu-chain-test)
+    # Its real-time case wants a key within 6 ms of its wall time: alone,
+    # not beside JIT-heavy tests on a loaded runner.
+    set_tests_properties(op1-cpu-chain-test PROPERTIES RUN_SERIAL TRUE)
     add_executable(op1-headless-test tests/headless_test.cpp gui/headless.cpp)
     target_include_directories(op1-headless-test PRIVATE gui)
     target_link_libraries(op1-headless-test PRIVATE emulator nlohmann_json::nlohmann_json Threads::Threads)
@@ -208,6 +236,9 @@ if(OP1_BUILD_HEADLESS_TESTS)
     add_executable(op1-audio-pcm-test tests/audio_pcm_test.cpp)
     target_include_directories(op1-audio-pcm-test PRIVATE gui)
     add_test(NAME op1-audio-pcm-test COMMAND op1-audio-pcm-test)
+    add_executable(op1-audio-stream-test tests/audio_stream_test.cpp)
+    target_include_directories(op1-audio-stream-test PRIVATE gui src/cpu)
+    add_test(NAME op1-audio-stream-test COMMAND op1-audio-stream-test)
     add_executable(op1-direct-pages-test tests/direct_pages_test.cpp)
     target_link_libraries(op1-direct-pages-test PRIVATE emulator)
     add_test(NAME op1-direct-pages-test COMMAND op1-direct-pages-test)
@@ -220,9 +251,16 @@ if(OP1_BUILD_HEADLESS_TESTS)
     add_executable(op1-nfc-ecc-test tests/nfc_ecc_test.cpp)
     target_link_libraries(op1-nfc-ecc-test PRIVATE emulator)
     add_test(NAME op1-nfc-ecc-test COMMAND op1-nfc-ecc-test)
+    add_executable(op1-nand-column-test tests/nand_column_test.cpp)
+    target_link_libraries(op1-nand-column-test PRIVATE emulator bfin-core Threads::Threads)
+    add_test(NAME op1-nand-column-test COMMAND op1-nand-column-test)
     add_executable(op1-register-test tests/register_test.cpp)
     target_link_libraries(op1-register-test PRIVATE emulator)
     add_test(NAME op1-register-test COMMAND op1-register-test)
+    add_executable(op1-usbipd-test tests/usbipd_test.cpp gui/usbipd.cpp)
+    target_include_directories(op1-usbipd-test PRIVATE gui)
+    target_link_libraries(op1-usbipd-test PRIVATE emulator uvw ext Threads::Threads)
+    add_test(NAME op1-usbipd-test COMMAND op1-usbipd-test)
     if(ENABLE_PROFILING)
         add_executable(op1-mark-set-test tests/mark_set_test.cpp src/profiling/mark_set.cpp)
         target_include_directories(op1-mark-set-test PRIVATE src)
@@ -241,7 +279,11 @@ if(OP1_BUILD_HEADLESS_TESTS)
             add_test(NAME op1-profile-smoke
                 COMMAND ${Python3_EXECUTABLE} tests/profile_smoke.py $<TARGET_FILE:op1emu>
                 WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
+            set_tests_properties(op1-profile-smoke PROPERTIES RESOURCE_LOCK usbip-port)
         endif()
+        # op1emu listens on the USB/IP port even headless: one at a time
+        # under ctest -j.
+        set_tests_properties(op1-ldr-smoke PROPERTIES RESOURCE_LOCK usbip-port)
     endif()
 endif()
 

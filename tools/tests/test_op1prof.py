@@ -1240,6 +1240,26 @@ def test_a_jit_worker_is_reported_apart_from_the_cpu_thread():
     assert "translated again: 0 blocks" in text           # promotions are no retranslations
 
 
+def test_compile_report_counts_stencil_blocks():
+    from op1prof import compilation
+    t = lambda pc, ts, cpu, **args: {"name": "translate", "ph": "X", "ts": ts, "dur": 1.0,
+                                     "args": {"pc": pc, "ok": True, "cpu_ns": cpu, "ir_insns": 0, "ir_blocks": 0,
+                                              "object_bytes": 40, "object_hash": f"{pc:016x}", "tier": 0, **args}}
+    mark = lambda name, ts: {"name": name, "cat": "mark", "ts": ts, "args": {"wall_ns": 0, "thread_cpu_ns": 0}}
+    data = {"schema": "op1.trace.v4", "dropped": 0, "traceEvents": [
+        mark("a", 0.0),
+        t(0x100, 1.0, 4_000, copy_patch=True),
+        t(0x300, 3.0, 5_000, copy_patch=True),
+        t(0x400, 4.0, 1_200_000, ir_insns=300),  # LLVM
+        mark("b", 9.0),
+    ]}
+    text = compilation.report(data, None, 10, census.Symbols(None))
+    assert "copy-and-patch: 2 blocks of stencils, 0.000 s CPU; tier 0 with LLVM 1 blocks, 0.001 s" in text
+    # No stencils, no line.
+    data["traceEvents"] = [mark("a", 0.0), t(0x400, 4.0, 1_200_000, ir_insns=300), mark("b", 9.0)]
+    assert "copy-and-patch" not in compilation.report(data, None, 10, census.Symbols(None))
+
+
 def test_unknown_hashes_and_failed_translations_give_no_fingerprint():
     from op1prof import compilation
     spans = lambda *hashes: [compilation.Translation(pc=i, begin_us=i, cpu_ns=1, ok=h != "failed", ir_insns=1,
