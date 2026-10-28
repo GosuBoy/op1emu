@@ -76,8 +76,11 @@ class UIPreview {
         glPixelStorei(GL_UNPACK_SWAP_BYTES, GL_TRUE);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE);
         const auto draw = [&] {
-            d.RenderFramebuffer(false);
             glfwPollEvents();
+            // Acquire a drawable at the new window size before rendering. In
+            // particular GLX may defer reallocating swap buffers until a swap.
+            glfwSwapBuffers(d.window_);
+            d.RenderFramebuffer(false);
         };
         draw();
         std::this_thread::sleep_for(std::chrono::milliseconds(140));
@@ -137,7 +140,6 @@ class UIPreview {
         } else
             while (!d.ShouldClose()) {
                 draw();
-                glfwSwapBuffers(d.window_);
                 std::this_thread::sleep_for(std::chrono::milliseconds(16));
             }
         return 0;
