@@ -15,7 +15,7 @@ class GLFWDisplay : public Display, public Keyboard {
     ~GLFWDisplay() override;
     void Initialize(int rows, int lines) override;
     void UpdateRowBuffer(int x, int y, const void *data, int length) override;
-    void RenderFramebuffer();
+    void RenderFramebuffer(bool present = true);
     void PollEvents();
     bool ShouldClose() const;
     void SwapBuffers();

@@ -200,7 +200,7 @@ void GLFWDisplay::DrawScreen() {
     glColor4f(1, 1, 1, 1);
     glPopMatrix();
 }
-void GLFWDisplay::RenderFramebuffer() {
+void GLFWDisplay::RenderFramebuffer(bool present) {
     if (!window_)
         return;
     glfwMakeContextCurrent(window_);
@@ -269,7 +269,8 @@ void GLFWDisplay::RenderFramebuffer() {
     glMatrixMode(matrixMode);
     glPopClientAttrib();
     glPopAttrib();
-    glfwSwapBuffers(window_);
+    if (present)
+        glfwSwapBuffers(window_);
 }
 void GLFWDisplay::PollEvents() {
     glfwPollEvents();

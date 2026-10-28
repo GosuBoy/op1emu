@@ -30,7 +30,9 @@ class UIPreview {
         glfwGetFramebufferSize(d.window_, &w, &h);
         std::vector<uint8_t> rgba(size_t(w) * h * 4);
         glPixelStorei(GL_PACK_ALIGNMENT, 1);
-        glReadBuffer(GL_FRONT);
+        // Read the rendered back buffer before presentation so capture does
+        // not depend on virtual-display/front-buffer behavior after a swap.
+        glReadBuffer(GL_BACK);
         glReadPixels(0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, rgba.data());
         Require(glGetError() == GL_NO_ERROR, "OpenGL error during capture");
         for (int y = 0; y < h / 2; ++y)
@@ -51,6 +53,12 @@ class UIPreview {
             double q = matrix[3] * p.x + matrix[7] * p.y + 1;
             int x = int((fit.x + fit.scale * (matrix[0] * p.x + matrix[4] * p.y + matrix[12]) / q) * w / lw);
             int y = int((fit.y + fit.scale * (matrix[1] * p.x + matrix[5] * p.y + matrix[13]) / q) * h / lh);
+            auto pixel = pixels.data() + (size_t(y) * w + x) * 4;
+            if (std::abs(int(pixel[0]) - expected[index][0]) >= 3 ||
+                std::abs(int(pixel[1]) - expected[index][1]) >= 3 ||
+                std::abs(int(pixel[2]) - expected[index][2]) >= 3)
+                std::cerr << "screen sample " << index << " at " << x << ',' << y << " (" << w << 'x' << h
+                          << ") = " << int(pixel[0]) << ',' << int(pixel[1]) << ',' << int(pixel[2]) << '\n';
             for (int c = 0; c < 3; ++c)
                 Require(std::abs(int(pixels[(size_t(y) * w + x) * 4 + c]) - expected[index][c]) < 3,
                         "RGB565 screen rotation/corner mismatch");
@@ -68,7 +76,7 @@ class UIPreview {
         glPixelStorei(GL_UNPACK_SWAP_BYTES, GL_TRUE);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE);
         const auto draw = [&] {
-            d.RenderFramebuffer();
+            d.RenderFramebuffer(false);
             glfwPollEvents();
         };
         draw();
@@ -129,6 +137,7 @@ class UIPreview {
         } else
             while (!d.ShouldClose()) {
                 draw();
+                glfwSwapBuffers(d.window_);
                 std::this_thread::sleep_for(std::chrono::milliseconds(16));
             }
         return 0;
