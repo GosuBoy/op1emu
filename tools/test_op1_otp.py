@@ -98,6 +98,29 @@ class OtpTests(unittest.TestCase):
             checksum ^= byte
         self.assertEqual(checksum, 0)
 
+    def test_package_extraction_includes_ldr_when_requested(self):
+        import lzma
+        import tarfile
+        import zlib
+        from provision_nand import unpack_op1
+
+        with tempfile.TemporaryDirectory() as dirname:
+            root = Path(dirname)
+            archive = io.BytesIO()
+            with tarfile.open(fileobj=archive, mode="w") as tf:
+                for name, data in (("content/op1.db", b"db"), ("OP1_vdk.ldr", b"ldr")):
+                    member = tarfile.TarInfo(name)
+                    member.size = len(data)
+                    tf.addfile(member, io.BytesIO(data))
+            compressed = lzma.compress(archive.getvalue(), format=lzma.FORMAT_ALONE)
+            pkg = root / "input.op1"
+            pkg.write_bytes(struct.pack("<I", zlib.crc32(compressed)) + compressed)
+            extract_root = root / "unpacked"
+            extract_root.mkdir()
+            unpack_op1(pkg, extract_root, include_ldr=True)
+            self.assertEqual((extract_root / "content/op1.db").read_bytes(), b"db")
+            self.assertEqual((extract_root / "OP1_vdk.ldr").read_bytes(), b"ldr")
+
     def test_invalid_ldr_header_rejected(self):
         with self.assertRaisesRegex(ValueError, "Invalid LDR"):
             op1_otp.decrypt_ldr(b"\0" * 16, self.key)
