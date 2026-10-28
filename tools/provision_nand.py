@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Prepare an op1emu split-OOB NAND image from original OP-1 factory content.
 
-Requires an external mkyaffs2 executable (yaffs2utils); does not decrypt LDRs.
+Requires an external mkyaffs2 executable (yaffs2utils). OTP decryption is optional.
 """
 
 import argparse
@@ -15,6 +15,8 @@ import tarfile
 import tempfile
 import zlib
 
+from op1_otp import decrypt_ldr, fetch_public_otp_key, read_otp
+
 PAGE_SIZE = 2048
 OOB_SIZE = 64
 PAGES_PER_BLOCK = 64
@@ -25,8 +27,8 @@ TAGS_SIZE = 28
 FIRST_YAFFS_SEQUENCE = 0x1000
 
 
-def unpack_op1(package: Path, root: Path) -> None:
-    """Extract only content/ from a CRC32 + LZMA-alone + TAR .op1 package."""
+def unpack_op1(package: Path, root: Path, include_ldr: bool = False) -> None:
+    """Extract content/ and optionally OP1_vdk.ldr from a checked .op1."""
     raw = package.read_bytes()
     if len(raw) < 17:
         raise ValueError("Firmware package is too short")
@@ -41,7 +43,9 @@ def unpack_op1(package: Path, root: Path) -> None:
             name = PurePosixPath(member.name)
             if name.is_absolute() or ".." in name.parts:
                 raise ValueError(f"Unsafe archive path: {member.name}")
-            if not name.parts or name.parts[0] != "content":
+            is_content = bool(name.parts) and name.parts[0] == "content"
+            is_ldr = include_ldr and name.parts == ("OP1_vdk.ldr",)
+            if not (is_content or is_ldr):
                 continue
             target = root.joinpath(*name.parts)
             if member.isdir():
@@ -50,11 +54,14 @@ def unpack_op1(package: Path, root: Path) -> None:
                 target.parent.mkdir(parents=True, exist_ok=True)
                 with tar.extractfile(member) as source, target.open("wb") as dest:
                     shutil.copyfileobj(source, dest)
-                extracted += 1
+                if is_content:
+                    extracted += 1
             else:
                 raise ValueError(f"Unsupported content entry: {member.name}")
     if not extracted:
         raise ValueError("Package has no regular files in content/")
+    if include_ldr and not (root / "OP1_vdk.ldr").is_file():
+        raise ValueError("Package has no OP1_vdk.ldr")
 
 
 def build_yaffs(root: Path, interleaved: Path, mkyaffs2: str) -> None:
@@ -126,28 +133,57 @@ def main() -> None:
     source.add_argument("--firmware", type=Path, help="Original OP-1 .op1 update package")
     source.add_argument("--content-dir", type=Path, help="Unpacked firmware content/ directory")
     parser.add_argument("--output", type=Path, required=True, help="New NAND image path (must not exist)")
+    otp_group = parser.add_mutually_exclusive_group()
+    otp_group.add_argument("--otp", type=Path, help="Local Tolsi OTP text dump, 8-KiB otp.bin or 16-byte page d0")
+    otp_group.add_argument("--fetch-otp", action="store_true",
+                           help="Opt in to fetching a pinned public OTP dump over HTTPS")
+    parser.add_argument("--ldr-output", type=Path, help="Write decrypted LDR here (requires --otp or --fetch-otp)")
     parser.add_argument("--mkyaffs2", default="mkyaffs2", help="Path to a working mkyaffs2 executable")
     parser.add_argument("--start-block", type=int, default=132,
                         help="YAFFS2 first block (default: 132; tested with firmware 246)")
     args = parser.parse_args()
+    decrypt_requested = bool(args.otp or args.fetch_otp)
+    if decrypt_requested and not args.firmware:
+        parser.error("--otp/--fetch-otp require --firmware (not --content-dir)")
+    if decrypt_requested and not args.ldr_output:
+        parser.error("--otp/--fetch-otp require --ldr-output")
+    if args.ldr_output and not decrypt_requested:
+        parser.error("--ldr-output requires --otp or --fetch-otp")
+    if args.ldr_output and args.ldr_output.resolve() == args.output.resolve():
+        parser.error("--ldr-output and --output must be different paths")
     try:
         if args.output.exists():
             raise FileExistsError(f"Refusing to overwrite {args.output}")
+        if args.ldr_output and args.ldr_output.exists():
+            raise FileExistsError(f"Refusing to overwrite {args.ldr_output}")
         with tempfile.TemporaryDirectory(prefix="op1emu-nand-") as workspace:
             work = Path(workspace)
             root = work / "fs-root"
             root.mkdir()
             if args.firmware:
-                unpack_op1(args.firmware, root)
+                unpack_op1(args.firmware, root, include_ldr=decrypt_requested)
             else:
                 if not args.content_dir.is_dir():
                     raise ValueError(f"Not a directory: {args.content_dir}")
                 shutil.copytree(args.content_dir, root / "content")
+            plaintext = None
+            if decrypt_requested:
+                otp_key = (fetch_public_otp_key() if args.fetch_otp else read_otp(args.otp))
+                plaintext = decrypt_ldr((root / "OP1_vdk.ldr").read_bytes(), otp_key)
             interleaved = work / "content.yaffs2"
             build_yaffs(root, interleaved, args.mkyaffs2)
             pages = provision(interleaved, args.output, args.start_block)
+            if plaintext is not None:
+                try:
+                    with args.ldr_output.open("xb") as f:
+                        f.write(plaintext)
+                except BaseException:
+                    args.output.unlink(missing_ok=True)
+                    raise
+                print(f"Wrote decrypted LDR to {args.ldr_output}")
             print(f"Wrote {pages} YAFFS2 pages to {args.output} at block {args.start_block}")
-            print("This initializes content only; an encrypted LDR still needs OTP/decryption.")
+            if plaintext is None:
+                print("This initializes content only; an encrypted LDR still needs OTP/decryption.")
     except (OSError, ValueError, RuntimeError, lzma.LZMAError, tarfile.TarError) as exc:
         parser.exit(1, f"error: {exc}\n")
 
