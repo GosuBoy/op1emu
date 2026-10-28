@@ -24,9 +24,9 @@ jobs:
         with:
           python-version: "3.10"
       - run: pip install pytest
+      - name: Test NAND and OTP tooling (synthetic inputs, no network)
+        run: python3 -m unittest discover -s tools -p 'test_*.py' -v
       - run: python3 -m pytest tools/tests -q
-      - name: Test NAND provisioning (synthetic inputs)
-        run: python3 -m unittest discover -s tools -p 'test_provision_nand.py' -v
 
   libcxx:
     # libc++'s system_clock counts microseconds, not libstdc++'s nanoseconds;
