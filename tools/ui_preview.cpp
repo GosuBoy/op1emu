@@ -5,6 +5,7 @@
 #include <iostream>
 #include <stdexcept>
 #include <thread>
+#include <tuple>
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include <stb_image_write.h>
 
@@ -130,6 +131,31 @@ class UIPreview {
             draw();
             Check(d);
             Require(!d.svg_, "PNG remains usable after SVG");
+            // Native window-sharing tools deliver correct cursor events while
+            // a separate global glfwGetCursorPos query may remain stale.
+            auto synth = std::find_if(d.uiConfig_.buttons.begin(), d.uiConfig_.buttons.end(),
+                                      [](const auto &b) { return b.name == "synth"; });
+            Require(synth != d.uiConfig_.buttons.end(), "Synth control exists");
+            int inputWidth, inputHeight;
+            glfwGetWindowSize(d.window_, &inputWidth, &inputHeight);
+            auto inputFit = UIFit::Into(d.artWidth_, d.artHeight_, inputWidth, inputHeight);
+            UIPoint center{};
+            for (auto p : synth->region.polygon) {
+                center.x += p.x / 4;
+                center.y += p.y / 4;
+            }
+            std::vector<std::tuple<int, int, bool>> keys;
+            d.SetKeyEventCallback([&](int bank, int pin, bool down) { keys.emplace_back(bank, pin, down); });
+            GLFWDisplay::CursorPositionCallback(d.window_, inputFit.x + center.x * inputFit.scale,
+                                                inputFit.y + center.y * inputFit.scale);
+            GLFWDisplay::MouseButtonCallback(d.window_, GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, 0);
+            GLFWDisplay::CursorPositionCallback(d.window_, -100, -100);
+            GLFWDisplay::MouseButtonCallback(d.window_, GLFW_MOUSE_BUTTON_LEFT, GLFW_RELEASE, 0);
+            Require(keys == std::vector<std::tuple<int, int, bool>>{{3, 2, true}, {3, 2, false}},
+                    "mouse callbacks use event coordinates and release outside");
+            GLFWDisplay::FocusCallback(d.window_, GLFW_FALSE);
+            Require(!d.hasCursorPosition_, "focus loss invalidates stale cursor position");
+            d.SetKeyEventCallback({});
             std::cout
                 << "GL RGB565, orientation, projective overlay, state, resize and texture reuse passed\n";
         } else if (argc > 2) {

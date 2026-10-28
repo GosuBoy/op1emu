@@ -28,6 +28,7 @@ class GLFWDisplay : public Display, public Keyboard {
     void UploadBackground(const uint8_t *data, int width, int height);
     void UpdateSvgCache(int logicalWidth, int logicalHeight, int fbWidth, int fbHeight);
     void Cleanup();
+    static void CursorPositionCallback(GLFWwindow *, double x, double y);
     static void MouseButtonCallback(GLFWwindow *, int button, int action, int mods);
     static void KeyCallback(GLFWwindow *, int key, int scancode, int action, int mods);
     static void FocusCallback(GLFWwindow *, int focused);
@@ -41,6 +42,8 @@ class GLFWDisplay : public Display, public Keyboard {
     int rotation_ = 90;
     bool dirty_ = false;
     std::mutex framebufferMutex_;
+    UIPoint cursorPosition_;
+    bool hasCursorPosition_ = false;
     UILayout uiConfig_;
     UIPanelInput input_{uiConfig_};
     std::unique_ptr<SvgBackgroundRenderer> svg_;

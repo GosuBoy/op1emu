@@ -23,6 +23,7 @@ GLFWDisplay::GLFWDisplay(const std::string &configPath) {
         glfwSwapInterval(1);
         glfwSetWindowUserPointer(window_, this);
         glfwSetMouseButtonCallback(window_, MouseButtonCallback);
+        glfwSetCursorPosCallback(window_, CursorPositionCallback);
         glfwSetKeyCallback(window_, KeyCallback);
         glfwSetWindowFocusCallback(window_, FocusCallback);
         input_.event = [this](int bank, int pin, bool pressed) {
@@ -282,13 +283,25 @@ void GLFWDisplay::SwapBuffers() {
         glfwSwapBuffers(window_);
 }
 void GLFWDisplay::SetDisplayRotation(int degrees) { rotation_ = (degrees % 360 + 360) % 360; }
+void GLFWDisplay::CursorPositionCallback(GLFWwindow *w, double x, double y) {
+    auto *self = static_cast<GLFWDisplay *>(glfwGetWindowUserPointer(w));
+    self->cursorPosition_ = {x, y};
+    self->hasCursorPosition_ = true;
+}
 void GLFWDisplay::MouseButtonCallback(GLFWwindow *w, int button, int action, int) {
     if (button != GLFW_MOUSE_BUTTON_LEFT || (action != GLFW_PRESS && action != GLFW_RELEASE))
         return;
     auto *self = static_cast<GLFWDisplay *>(glfwGetWindowUserPointer(w));
     double x, y;
     int width, height;
-    glfwGetCursorPos(w, &x, &y);
+    // Native/remote event coordinates can differ from a global cursor query
+    // (notably macOS window sharing). Prefer the latest GLFW cursor event.
+    if (self->hasCursorPosition_) {
+        x = self->cursorPosition_.x;
+        y = self->cursorPosition_.y;
+    } else {
+        glfwGetCursorPos(w, &x, &y);
+    }
     glfwGetWindowSize(w, &width, &height);
     if (action == GLFW_RELEASE)
         self->input_.Mouse(false, {});
@@ -306,8 +319,11 @@ void GLFWDisplay::KeyCallback(GLFWwindow *w, int key, int, int action, int) {
         }
 }
 void GLFWDisplay::FocusCallback(GLFWwindow *w, int focused) {
-    if (!focused)
-        static_cast<GLFWDisplay *>(glfwGetWindowUserPointer(w))->input_.ReleaseAll();
+    if (!focused) {
+        auto *self = static_cast<GLFWDisplay *>(glfwGetWindowUserPointer(w));
+        self->input_.ReleaseAll();
+        self->hasCursorPosition_ = false;
+    }
 }
 int GLFWDisplay::MapKeyNameToGLFW(const std::string &keyName) {
     // Map common key names to GLFW key codes
