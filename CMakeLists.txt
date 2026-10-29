@@ -331,6 +331,10 @@ if(OP1_BUILD_HEADLESS_TESTS)
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/stream_guest_integration.py
                     $<TARGET_FILE:op1-stream-guest-test> ${CMAKE_CURRENT_BINARY_DIR}/stream-guest $<TARGET_FILE:op1emu>)
         set_tests_properties(op1-stream-guest PROPERTIES TIMEOUT 180 RESOURCE_LOCK usbip-port)
+        add_test(NAME op1-stream-guest-44100
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/stream_guest_integration.py
+                    $<TARGET_FILE:op1-stream-guest-test> ${CMAKE_CURRENT_BINARY_DIR}/stream-guest-44100 $<TARGET_FILE:op1emu> 44100)
+        set_tests_properties(op1-stream-guest-44100 PROPERTIES TIMEOUT 180 RESOURCE_LOCK usbip-port)
         add_test(NAME op1-ldr-smoke
             COMMAND ${Python3_EXECUTABLE} tests/ldr_smoke.py $<TARGET_FILE:op1emu> $<TARGET_FILE:ldrdump>
             WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")

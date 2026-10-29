@@ -63,6 +63,16 @@ int main() {
     Check(r.wireHz == 0 && r.Reason("missing_mclk") && r.R(5) == 0x20 && r.codec.Inspect().earlyMclkRemoval,
           "MCLK absence/control availability/early removal diagnostic");
     r.codec.SetMclk(12'288'000); Check(r.wireHz == 3'072'000, "MCLK resume");
+    r.codec.SetMclk(11'289'600);
+    Check(r.wireHz == 2'822'400 && r.codec.Inspect().frameHz == 44'100 &&
+          r.R(5) == 0x20 && r.R(6) == 0x80 && r.R(7) == 0, "44.1 kHz manual master divider");
+    Check(r.W(5, 0xa0) && r.wireHz == 0, "44.1 kHz AUTO must not silently fall back");
+    Check(r.W(5, 0x20) && r.wireHz == 2'822'400, "44.1 kHz manual restore");
+    Check(r.W(7, 0x10) && r.wireHz == 0 && r.W(7, 0) && r.wireHz == 2'822'400,
+          "44.1 kHz tri-state gate");
+    r.codec.SetMclk(0); Check(r.wireHz == 0, "44.1 kHz clock loss");
+    r.codec.SetMclk(11'289'600); Check(r.wireHz == 2'822'400, "44.1 kHz clock resume");
+    r.codec.SetMclk(12'288'000); Check(r.wireHz == 3'072'000, "48 kHz profile preserved");
     Check(r.W(2, 1) && r.W(6, 0) && r.Reason("slave_no_external_serial_source") && r.wireHz == 0, "slave source");
     Check(r.W(6, 0x80) && r.W(2, 0) && r.wireHz == 3'072'000, "master source restore");
     Check(r.W(5, 0) && r.wireHz == 0 && r.Reason("unsupported_clock_configuration") && r.R(5) == 0,

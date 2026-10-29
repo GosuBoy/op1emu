@@ -8,6 +8,28 @@
 .ifndef STREAM_CASE
 .set STREAM_CASE, 0
 .endif
+.ifndef STREAM_BLOCKS
+.set STREAM_BLOCKS, 256
+.endif
+.ifndef STREAM_RATE
+.set STREAM_RATE, 48000
+.endif
+.ifndef STREAM_EVENT_CAPACITY
+.set STREAM_EVENT_CAPACITY, 2048
+.endif
+.ifndef STREAM_SAFE_STOP
+.set STREAM_SAFE_STOP, (STREAM_CASE == 3)
+.endif
+.macro CHECK_UNDERRUN
+    .if STREAM_SAFE_STOP
+    SET32 P0, 0xffc00830
+    R1 = W[P0] (Z);
+    CC = BITTST(R1, 4);
+    IF !CC JUMP 1f;
+    JUMP.L underrun_stop;
+1:
+    .endif
+.endm
 .macro SET32 reg, value
     \reg\().L = ((\value) & 0xffff);
     \reg\().H = (((\value) >> 16) & 0xffff);
@@ -135,11 +157,15 @@ wait_dma:
     JUMP.L watchdog;
 1:
     R0 = [P5 + 164];
-    R1 = 256;
+    R1 = STREAM_BLOCKS;
     CC = R0 == R1;
     IF !CC JUMP 1f;
     JUMP.L shutdown;
 1:
+    .if STREAM_SAFE_STOP
+    CHECK_UNDERRUN
+    R0 = [P5 + 164];
+    .endif
     R1 = [P5 + 8];
     CC = R0 < R1 (IU);
     IF CC JUMP completed;
@@ -164,7 +190,7 @@ completed:
     R0 = [P5 + 164];
     R0 += 1;
     [P5 + 164] = R0;
-    R1 = 256;
+    R1 = STREAM_BLOCKS;
     CC = R0 == R1;
     IF CC JUMP refill;
     R1 = R0;
@@ -172,11 +198,15 @@ completed:
 refill:
     R0 = [P5 + 248];
     R0 += 2;
-    R1 = 256;
+    R1 = STREAM_BLOCKS;
     CC = R0 < R1 (IU);
     IF !CC JUMP wait_dma;
     R1 = [P5 + 160];
+    .if STREAM_CASE == 3
+    CC = R1 == 3;
+    .else
     CC = R1 == 1;
+    .endif
     IF !CC JUMP produce_next;
     R1 = [P5 + 248];
     R2 = 8;
@@ -184,6 +214,8 @@ refill:
     IF !CC JUMP produce_next;
     CALL producer_delay; /* DMA9 finishes during this 2 ms guest IDLE wait. */
 produce_next:
+    /* Recovery is unqualified: preserve replays and stop before more data. */
+    CHECK_UNDERRUN
     R0 = [P5 + 248];
     R0 += 2;
     CALL produce;
@@ -261,6 +293,10 @@ start_dma: /* R1=block to submit, requires READY and generation match. */
     [--SP] = RETS;
     [--SP] = R5;
     R5 = R1;
+    .if STREAM_SAFE_STOP
+    CHECK_UNDERRUN
+    R1 = R5;
+    .endif
     CALL owner_pointer;
     R0 = [P2];
     REQUIRE R0, 2
@@ -298,7 +334,7 @@ start_dma: /* R1=block to submit, requires READY and generation match. */
     R1 = R5;
     CALL event;
     R0 = 1; /* timer purpose: work-unit watchdog */
-    SET32 R1, 1600000 /* 4 ms, comfortably beyond 64 frames at 48 kHz */
+    SET32 R1, 1600000 /* 4ms > 2*(64/44100 + 0.5ms), also covers 48k. */
     CALL arm_timer;
     R5 = [SP++];
     RETS = [SP++];
@@ -342,12 +378,18 @@ delayed:
 
 shutdown:
     R0 = 10;
-    R1 = 256;
+    R1 = STREAM_BLOCKS;
     CALL event;
     R0 = CYCLES;
     [P5 + 40] = R0;
     R0 = 3;
-    SET32 R1, 26000 /* 6 outstanding SPORT words *32/3.072MHz=62.5us; 65us guard */
+    .if STREAM_RATE == 44100
+    SET32 R1, 28000 /* 6*32/2.8224MHz=68.027211us; 70us guard. */
+    .elseif STREAM_RATE == 48000
+    SET32 R1, 26000 /* 6*32/3.072MHz=62.5us; 65us guard. */
+    .else
+    .error "unqualified streaming rate"
+    .endif
     CALL arm_timer;
 drain_wait:
     R0 = [P5 + 228];
@@ -365,16 +407,31 @@ drained:
     W[P0] = R0;
     SSYNC;
     R0 = 11;
-    R1 = 256;
+    R1 = STREAM_BLOCKS;
     CALL event;
     R0 = [P5 + 8];
-    R1 = 256;
+    R1 = STREAM_BLOCKS;
     CC = R0 == R1;
     IF !CC JUMP failed;
     R0 = [P5 + 204];
     REQUIRE R0, 0
     SET32 R0, 0x50415353
     JUMP finish;
+.if STREAM_SAFE_STOP
+underrun_stop:
+    CALL snapshot;
+    SET32 P0, 0xffc00800
+    R0 = 0;
+    W[P0] = R0;
+    SET32 P0, 0xffc00d08
+    W[P0] = R0;
+    SSYNC;
+    R0 = 12;
+    R1 = [P5 + 164];
+    CALL event;
+    SET32 R0, 0x554e4452 /* UNDR: no alignment recovery claimed. */
+    JUMP finish;
+.endif
 watchdog:
     CALL snapshot;
     SET32 R0, 0x57444f47
@@ -413,7 +470,7 @@ event:
     [--SP] = P0;
     [--SP] = P1;
     R2 = [P5 + 200];
-    R3 = 2048;
+    R3 = STREAM_EVENT_CAPACITY;
     CC = R2 < R3 (IU);
     IF !CC JUMP event_drop;
     R3 = R2 << 6;

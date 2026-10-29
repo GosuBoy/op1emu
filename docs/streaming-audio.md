@@ -1,7 +1,7 @@
 # Sustained guest-driven streaming
 
 This milestone qualifies an independent public producer/consumer test on the
-existing opt-in 48 kHz CS42L52 profile. It does not identify a physical OP-1 codec,
+opt-in 48 kHz and 44.1 kHz CS42L52 profiles. It does not identify a physical OP-1 codec,
 clock/reset route or deadline margin. R4's unchanged admission refusal and raw
 hysteresis readback are preserved. `legacy` remains the default.
 
@@ -26,9 +26,11 @@ payload/32-bit slots and declared PG12 RESET/serial wiring. The source sample
 representation is signed 16-bit packed in the slot MSBs. Mute requests remain
 asserted; native capture is upstream SPORT evidence, not a DAC output.
 
-The recovered mixer can eventually replace the producer. Its output rate
-must explicitly become 48000 and be revalidated, or a separate evidenced rate/
-resampling path is required. No 44.1 kHz stream is silently interpreted as 48 kHz.
+The [standalone private mixer integration](doom-mixer-integration.md) now
+replaces this producer at an explicitly initialized 44100 output rate. Its
+source, build inputs and captures remain private. The public 44.1 kHz fixtures
+qualify the same consumer without requiring those sources. No 44.1 kHz stream
+is interpreted as 48 kHz.
 Descriptor traversal is unnecessary for this selected mode and remains a
 separate qualification task for hardware-intended R4.
 
@@ -215,3 +217,36 @@ model establishes neither BF524 deadline margin nor smooth real-time host playba
 See [validation and output identities](streaming-validation.md). R4's baseline,
 explicit synthetic panel status, disputed guard and reserved hysteresis storage
 are unchanged. No physical device access or flashing is involved.
+
+## Additional 44.1 kHz and safe-stop qualification
+
+`normal-44100`, `delay-44100` and `premature-44100` use synthetic 11.2896 MHz
+MCLK, with guest TWI selecting 05=20/06=80/07=00. SCLK=2.8224 MHz; each
+component takes exactly 1e9/88200 ns. The independent checker compares rational
+timestamps over all 32768 components, rather than summing rounded periods.
+A block lasts 64/44100=1.451247166 ms. The retained 4 ms watchdog exceeds
+twice this duration plus the declared 500 us clock pause. Six SPORT words
+need 68.027211 us after SYNC1 DMA completion; the new drain guard is 70 us
+(28000 guest cycles), below a seventh complete slot. The original 48 kHz
+images and 65 us guard are byte-identical to the previous checkpoint.
+
+The existing delayed-refill regression remains intentionally failing as audio:
+at 44.1 kHz it captures 43 repeated components and 31488 fresh components with
+wrong stereo phase; at 48 kHz the established counts remain 59/31488.
+`stop-delay-44100` instead selects `STREAM_SAFE_STOP`: guest code checks
+SPORT TUVF before submission, before/after production, and before continuing
+a wait. It snapshots the fault, disables SPORT before DMA and returns `UNDR`.
+The injected 2 ms producer delay yields 1280 correctly ordered fresh components
+plus 42 explicitly flagged replays and a partial repeat in flight. No later
+fresh data is submitted; no host slot relabeling, clock reset or sample removal
+occurs. Stereo recovery remains unsupported. Final normal drain's one
+post-data underflow is accounted separately and does not trigger recovery.
+
+The public consumer also accepts assembly build parameters for block count
+and ledger capacity. The native test observer accepts linker-provided mailbox/
+ledger addresses, bounded memory observations, stack paint inspection and PC
+watch counts. These are passive observations; none refill data or advance
+peripherals. The optional PC counts are sampled at CPU Run boundaries and
+are used for a separate unchained execution proof. Full repeat/chaining
+comparisons run without that observation, since chaining can skip such
+boundaries. All trace capacities remain explicit; overflow/truncation fails.

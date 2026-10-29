@@ -14,6 +14,8 @@
 #include <fstream>
 #include <iostream>
 #include <thread>
+#include <utility>
+#include <vector>
 using Json = nlohmann::ordered_json;
 struct NoFlash : NandFlash {
     void SendCommand(u8) override {} void SendAddress(u8) override {}
@@ -53,16 +55,40 @@ static uint32_t HashWord(uint32_t hash, u32 v) {
 int main(int argc, char** argv) {
     if (argc < 4) return 2;
     const std::string mode = argv[3];
-    if (mode != "normal" && mode != "delay" && mode != "premature" && mode != "pause" && mode != "clock-timeout") return 2;
+    if (mode != "normal" && mode != "delay" && mode != "premature" && mode != "pause" && mode != "clock-timeout" && mode != "stop-delay") return 2;
     bool chain = false;
     uint64_t maxCycles = 200'000'000;
+    unsigned rate = 48000, blockCount = 256, mailboxAddress = 0x2000, ledgerAddress = 0x10000;
+    unsigned ledgerCapacity = 2048, runLimit = 3'000'000;
+    u32 stackBegin = 0, stackBytes = 0;
+    std::vector<std::pair<u32, unsigned>> memoryRanges;
+    std::vector<std::pair<u32, uint64_t>> pcWatches;
     for (int i = 4; i < argc; ++i) {
         if (std::string(argv[i]) == "--chain") chain = true;
         else if (std::string(argv[i]) == "--max-cycles" && i + 1 < argc) maxCycles = std::stoull(argv[++i]);
-        else return 2;
+        else if (std::string(argv[i]) == "--rate" && i + 1 < argc) rate = std::stoul(argv[++i]);
+        else if (std::string(argv[i]) == "--blocks" && i + 1 < argc) blockCount = std::stoul(argv[++i]);
+        else if (std::string(argv[i]) == "--mailbox" && i + 1 < argc) mailboxAddress = std::stoul(argv[++i], nullptr, 0);
+        else if (std::string(argv[i]) == "--ledger" && i + 1 < argc) ledgerAddress = std::stoul(argv[++i], nullptr, 0);
+        else if (std::string(argv[i]) == "--ledger-capacity" && i + 1 < argc) ledgerCapacity = std::stoul(argv[++i]);
+        else if (std::string(argv[i]) == "--max-runs" && i + 1 < argc) runLimit = std::stoul(argv[++i]);
+        else if (std::string(argv[i]) == "--watch-pc" && i + 1 < argc) pcWatches.emplace_back(std::stoul(argv[++i], nullptr, 0), 0);
+        else if (std::string(argv[i]) == "--stack" && i + 2 < argc) {
+            stackBegin = std::stoul(argv[++i], nullptr, 0);
+            stackBytes = std::stoul(argv[++i]);
+            if ((stackBegin & 3) || (stackBytes & 3) || stackBytes > 1024 * 1024) return 2;
+        } else if (std::string(argv[i]) == "--observe-memory" && i + 2 < argc) {
+            const auto address = std::stoul(argv[++i], nullptr, 0);
+            const auto count = std::stoul(argv[++i]);
+            if (count > 4096) return 2;
+            memoryRanges.emplace_back(address, count);
+        } else return 2;
     }
+    if ((rate != 48000 && rate != 44100) || !blockCount || blockCount > 16384 ||
+        ledgerCapacity > 131072 || !ledgerCapacity) return 2;
+    const auto mclk = rate == 44100 ? 11'289'600u : 12'288'000u;
     GuestCpu cpu(chain);
-    cpu.SetTwiSpeedup(1); cpu.ConfigureCs42l52Test(12'288'000);
+    cpu.SetTwiSpeedup(1); cpu.ConfigureCs42l52Test(mclk);
     SportCapture capture(argv[2]);
     uint64_t captured = 0, repeated = 0, invalid = 0;
     uint64_t observedUnderflows = 0;
@@ -113,7 +139,7 @@ int main(int argc, char** argv) {
         if (e.channel != 4) throw std::runtime_error("unexpected buffered DMA channel");
         const std::string op = e.operation;
         if (op == "start") {
-            if (blocks.size() >= 512) { ++dropped; return; }
+            if (blocks.size() >= blockCount) { ++dropped; return; }
             blocks.push_back({{"work", e.work}, {"start_ns", e.ns}, {"read_words", 0}, {"accepted_words", 0},
                               {"read_hash", 2166136261u}, {"accept_hash", 2166136261u}});
             // Declared external input changes, scheduled by CPU guest time.
@@ -121,7 +147,7 @@ int main(int argc, char** argv) {
                 cpu.QueueEvent([&] { cpu.TestCodec()->SetMclk(0); snapshot("drop"); }, std::chrono::microseconds(500));
                 cpu.QueueEvent([&] { snapshot("stalled-a"); }, std::chrono::microseconds(600));
                 cpu.QueueEvent([&] { snapshot("stalled-b"); }, std::chrono::microseconds(900));
-                if (mode == "pause") cpu.QueueEvent([&] { snapshot("before-resume"); cpu.TestCodec()->SetMclk(12'288'000); },
+                if (mode == "pause") cpu.QueueEvent([&] { snapshot("before-resume"); cpu.TestCodec()->SetMclk(mclk); },
                                                      std::chrono::microseconds(1000));
             }
         }
@@ -145,34 +171,44 @@ int main(int argc, char** argv) {
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
     unsigned runs = 0;
     while (cpu.PC() != kLdrReturnAddress && !cpu.Failed() && cpu.Time().Cycles() < maxCycles &&
-           runs < 3'000'000 && std::chrono::steady_clock::now() < deadline) { cpu.Run(); ++runs; }
+           runs < runLimit && std::chrono::steady_clock::now() < deadline) {
+        for (auto& watch : pcWatches) if (cpu.PC() == watch.first) ++watch.second;
+        cpu.Run(); ++runs;
+    }
     observeBuffers();
     capture.Finish();
     auto& emu = cpu.GetEmulator();
     Json box = Json::array();
-    for (unsigned i = 0; i < 64; ++i) box.push_back(emu.MemoryRead32(0x2000 + i * 4));
+    for (unsigned i = 0; i < 64; ++i) box.push_back(emu.MemoryRead32(mailboxAddress + i * 4));
     Json guestEvents = Json::array();
-    for (unsigned i = 0; i < std::min(box[50].get<unsigned>(), 2048u); ++i) {
+    for (unsigned i = 0; i < std::min(box[50].get<unsigned>(), ledgerCapacity); ++i) {
         Json row = Json::array();
-        for (unsigned j = 0; j < 16; ++j) row.push_back(emu.MemoryRead32(0x10000 + i * 64 + j * 4));
+        for (unsigned j = 0; j < 16; ++j) row.push_back(emu.MemoryRead32(ledgerAddress + i * 64 + j * 4));
         guestEvents.push_back(row);
     }
     Json errors = Json::array();
     auto check = [&](bool ok, const char* why) { if (!ok) errors.push_back(why); };
     check(cpu.PC() == kLdrReturnAddress && !cpu.Failed(), "guest execution bound or CPU failure");
     check(cpu.Seqstat() == 0 && box[26] == 0, "guest exception");
-    check(dropped == 0 && box[51] == 0, "trace overflow");
+    check(dropped == 0 && box[51] == 0 && box[50].get<unsigned>() <= ledgerCapacity, "trace overflow");
     check(maxDmaBuffered <= 4 && maxSportBuffered <= 6 && maxCombinedBuffered <= 10, "unbounded TX buffering");
     check(box[25] == 0x76543210 && box[32] == 0xe3 && box[35] == 0x494e4954, "guest context/codec initialization");
     check(invalid == 0, "invalid serial output");
     if (mode == "clock-timeout") {
         check(box[0] == 0x57444f47 && box[55] == 1 && box[2] == 32, "guest clock watchdog did not bound the stall");
+    } else if (mode == "stop-delay") {
+        check(box[0] == 0x554e4452 && box[55] == 0 && box[2] == 10 && box[42] == 10 && box[43] == 10,
+              "late producer did not stop diagnostically before new submission");
+        check(captured - repeated == 1280 && repeated > 0 && cpu.PeekSport().accepted == 1280,
+              "late producer output prefix/replay accounting");
+        check(!cpu.PeekDma().running && !cpu.PeekSport().shifting, "late producer stop left transmitter running");
+        check(cpu.Cec(12) == 0 && !(cpu.Cec(8) & 0x200), "late producer interrupt not acknowledged");
     } else {
-        check(box[0] == 0x50415353 && box[2] == 256 && box[41] == 256 && box[42] == 256 && box[43] == 256,
-              "guest did not produce/submit/complete 256 blocks");
-        check(box[44] == 0 && box[45] == 0 && box[48] == 128 && box[49] == 128,
+        check(box[0] == 0x50415353 && box[2] == blockCount && box[41] == blockCount && box[42] == blockCount && box[43] == blockCount,
+              "guest did not produce/submit/complete requested blocks");
+        check(box[44] == 0 && box[45] == 0 && box[48] == (blockCount + 1) / 2 && box[49] == blockCount / 2,
               "buffer ownership/reuse totals");
-        check(captured - repeated == 32768 && cpu.PeekSport().accepted == 32768, "finite output length");
+        check(captured - repeated == uint64_t(blockCount) * 128 && cpu.PeekSport().accepted == uint64_t(blockCount) * 128, "finite output length");
         check(cpu.PeekSport().overflows == 0 && cpu.PeekSport().fifo == 0 && !cpu.PeekSport().holding &&
               !cpu.PeekSport().shifting, "shutdown did not drain and stop");
         check(cpu.Cec(12) == 0 && !(cpu.Cec(8) & 0x200), "unacknowledged DMA interrupt");
@@ -186,9 +222,29 @@ int main(int argc, char** argv) {
         {"sport_error_observations", sportErrors}, {"buffer_high_water", {{"dma", maxDmaBuffered},
              {"sport", maxSportBuffered}, {"combined", maxCombinedBuffered}}},
         {"codec_events", codecEvents}, {"twi_events", twiEvents}, {"guest_events", guestEvents},
-        {"trace_dropped", dropped}, {"trace_limits", {{"blocks", 512}, {"guest", 2048}, {"codec", 2048},
+        {"trace_dropped", dropped}, {"trace_limits", {{"blocks", blockCount}, {"guest", ledgerCapacity}, {"codec", 2048},
              {"twi", 2048}, {"clock", 16}, {"prefix_reads", 16}, {"sport_errors", 1024}}},
         {"capture_words", captured}, {"repeated_words", repeated}, {"invalid_words", invalid}, {"errors", errors}};
+    if (stackBytes) {
+        u32 firstWritten = stackBytes;
+        for (u32 offset = 0; offset < stackBytes; offset += 4) {
+            if (emu.MemoryRead32(stackBegin + offset) != 0xa5a5a5a5) { firstWritten = offset; break; }
+        }
+        report["stack_observation"] = {{"begin", stackBegin}, {"bytes", stackBytes},
+                                       {"painted_high_water_bytes", stackBytes - firstWritten}};
+    }
+    if (!memoryRanges.empty()) {
+        report["memory_observations"] = Json::array();
+        for (auto [address, count] : memoryRanges) {
+            Json values = Json::array();
+            for (unsigned i = 0; i < count; ++i) values.push_back(emu.MemoryRead32(address + 4 * i));
+            report["memory_observations"].push_back({{"address", address}, {"values", values}});
+        }
+    }
+    if (!pcWatches.empty()) {
+        report["pc_watches"] = Json::array();
+        for (auto [address, hits] : pcWatches) report["pc_watches"].push_back({{"address", address}, {"hits", hits}});
+    }
     std::ofstream(std::string(argv[2]) + ".json") << report.dump(2) << '\n';
     if (!errors.empty()) { std::cerr << errors.dump() << " PC=" << cpu.PC() << " mailbox=" << box.dump() << '\n'; return 1; }
     std::cout << mode << ": " << box[2] << " IRQ, " << box[48] << '/' << box[49] << " productions per slot, "

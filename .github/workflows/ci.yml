@@ -200,6 +200,7 @@ jobs:
             build/sport-guest/
             build/codec-guest/
             build/stream-guest/
+            build/stream-guest-44100/
 
       - name: OpenGL shell regression (Linux)
         if: runner.os == 'Linux'

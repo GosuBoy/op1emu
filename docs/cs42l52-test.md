@@ -17,7 +17,7 @@ private checkpoint's logical codec model is not an implementation dependency.
 | 4.12, 6.1 | AD0=0, address `0x4a`; declared B1 test identity `0xe3`, read-only. MAP low seven bits, auto-increment bit7, byte fragmentation and STOP retaining MAP. Read uses MAP write/STOP followed by read, as specified. |
 | 5, 6.2–6.7 | Defaults for supported controls: `02=01`, `03=07`, `04=05`, `05=a0`, `06=00`, `07=00`. Global power, output power fields, master/slave and serial tri-state are observable separately. |
 | 4.11 | Accept and record the published hidden-register initialization sequence `00:99, 3e:ba, 47:80, 32:bb, 32:3b, 00:00`. Guest reads `32` and preserves its other bits. Completion records programming, not analog current/threshold performance. |
-| 4.6 table1; 6.5–6.6 | Only 12.288 MHz MCLK, `05=20`, `06=80`, `07=00`: manual single-speed, normal ratio/polarity, master, left-justified. Derived LRCK=48 kHz, SCLK=3.072 MHz, 64 clocks/frame. |
+| 4.6 table1; 6.5–6.6 | 12.288 or 11.2896 MHz MCLK, `05=20`, `06=80`, `07=00`: manual single-speed, normal ratio/polarity, master, left-justified. LRCK=MCLK/256 gives 48 or 44.1 kHz; SCLK=MCLK/4 gives 3.072 or 2.8224 MHz, 64 clocks/frame. |
 | 6.7, 6.12–6.14 | Slave has no generated serial source; `3ST_SP` removes master pin drive. `0d` master-mute bits and `0f` output-mute bits are recorded independently of serial clocks. |
 | 4.10 | A power-down request records a 100 µs settling deadline. Removing MCLK before that interval, or during active power, records `early_mclk_removal`; no analog effect is simulated. Unit checks straddle the deadline. |
 
@@ -51,6 +51,14 @@ path; this does not qualify the physical address/data NACK distinction.
 - synthetic PG12 output to codec RESET, AD0 grounded;
 - codec SCLK/LRCK to SPORT0 external clock/frame inputs, SPORT0 primary TX to
   the declared left-justified SDIN stream; SPORT1 has no clock source.
+
+`--cs42l52-test-mclk 11289600` selects the additional 44.1 kHz manual
+configuration. DS680F2 Table 1 specifies SPEED=01, 32kGROUP=0, VIDEOCLK=0,
+RATIO=00 and MCLKDIV2=0 for both these manual rates; AUTO=0 makes `05=20`.
+Register06 `80` selects master, normal polarity and left-justified data;
+register07 `00` retains the supported 64-clock stereo framing. Both profiles
+require guest TWI configuration, valid RESET release and PDN clear. Unsupported
+MCLK/control combinations continue to stop the modeled clock.
 
 Zero MCLK selects the same wiring with the MCLK absent. The CLI rejects a
 direct `--sport-tx-clock` or non-64 frame setting with this profile. The test

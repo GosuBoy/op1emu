@@ -1,5 +1,9 @@
 # Streaming validation
 
+This page records the 29ba89a/32cce2e checkpoint. The subsequent
+[44.1 kHz and guest mixer validation](doom-mixer-validation.md) preserves
+these 48 kHz image/PCM/CSV identities and adds a separate rate matrix.
+
 The public fixture executes through the normal loader/CPU/TWI/SPORT/DMA and
 SIC/CEC paths. The legacy default, opt-in codec assumptions and unchanged R4
 refusal are preserved. These are synthetic digital results, not physical

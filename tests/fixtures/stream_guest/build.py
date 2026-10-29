@@ -62,15 +62,16 @@ def main():
         assert "2.44" in version, version
         print(version)
     images = {}
-    for case, name in enumerate(("normal", "delay", "premature")):
+    for name, rate, case in [(n, 48000, i) for i, n in enumerate(("normal", "delay", "premature"))] + [
+            (n + "-44100", 44100, i) for i, n in enumerate(("normal", "delay", "premature", "stop-delay"))]:
         with tempfile.TemporaryDirectory(prefix="stream-guest-build-") as tmp:
             obj, elf = Path(tmp) / "guest.o", Path(tmp) / "guest.elf"
             subprocess.run([args.assembler, "-mcpu=bf524", "--fatal-warnings", "-I", ROOT,
-                            "--defsym", f"STREAM_CASE={case}", "-o", obj, ROOT / "stream.s"], check=True)
+                            "--defsym", f"STREAM_CASE={case}", "--defsym", f"STREAM_RATE={rate}", "-o", obj, ROOT / "stream.s"], check=True)
             subprocess.run([args.linker, "-T", ROOT / "link.ld", "-o", elf, obj], check=True)
             image, symbols = extract(elf.read_bytes())
         path = ROOT / (name + ".ldr")
-        images[name] = {"case": case, "image_bytes": len(image), "image_sha256": sha(image), "symbols": symbols}
+        images[name] = {"case": case, "rate_hz": rate, "image_bytes": len(image), "image_sha256": sha(image), "symbols": symbols}
         if args.check:
             assert image == path.read_bytes(), f"{name} LDR rebuild differs"
         else:

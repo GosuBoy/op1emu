@@ -116,8 +116,13 @@ unchanged public capture identities and the private observation's limits.
    The [sustained streaming fixture](streaming-audio.md) now exercises 256
    guest-produced blocks, two reusable buffers, SYNC-dependent DMA FIFO
    completion, actual guest interrupts and independent sample/cadence checks.
-   Next connect the recovered mixer through the producer interface, with an
-   explicitly selected output rate and the pinned private build dependencies.
+   The [standalone recovered mixer integration](doom-mixer-integration.md) now
+   executes the real private mixer/decoder as guest code at 44100 through the
+   same consumer. Its generated DMX inputs, build recipe and private captures
+   remain outside this repository. Public CI qualifies both codec rates and
+   the bounded underrun stop without depending on private inputs. Next recover
+   the full-game event/provider/runtime integration and qualify any recovery
+   or descriptor modes that it actually needs.
 2. Keep R4 hardware qualification blocked on the [completed hysteresis investigation](portg-hysteresis.md).
    No dispatch/lane defect was found. Preserve raw `0x0008` storage, unchanged
    guest admission, synthetic panel status, baseline and conditional traces.

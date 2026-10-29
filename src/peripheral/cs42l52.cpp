@@ -26,7 +26,10 @@ CS42L52::State CS42L52::Inspect() const {
     else if (!s.master) s.clockReason = "slave_no_external_serial_source";
     else if (s.tristate) s.clockReason = "serial_pins_high_impedance";
     else if (!s.mclkHz) s.clockReason = "missing_mclk";
-    else if (s.mclkHz != 12'288'000 || s.clock != 0x20) s.clockReason = "unsupported_clock_configuration";
+    // DS680F2 Table 1: manual single-speed, RATIO=00, DIV2=0 at
+    // 12.288/11.2896 MHz gives 48/44.1 kHz respectively (MCLK/256).
+    else if ((s.mclkHz != 12'288'000 && s.mclkHz != 11'289'600) || s.clock != 0x20)
+        s.clockReason = "unsupported_clock_configuration";
     else if (s.interface1 != 0x80 || s.interface2 != 0) s.clockReason = "unsupported_serial_configuration";
     // The bounded active-mode experiment does not qualify pin waveforms in
     // global power-down. Fail closed rather than invent PDN clock semantics.

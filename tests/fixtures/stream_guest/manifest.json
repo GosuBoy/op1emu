@@ -4,6 +4,30 @@
       "case": 1,
       "image_bytes": 2308,
       "image_sha256": "b487a90f1bb6e777e8a49fdc6463c4b5f48fa4a439ef2e1bcad1bc676169dcc5",
+      "rate_hz": 48000,
+      "symbols": {
+        "_start": 4288676096,
+        "codec_configured": 4288678218,
+        "codec_failed": 4288677164,
+        "codec_setup": 4288677586,
+        "delay_idle_resume": 4288677006,
+        "dma_isr": 4288677412,
+        "event": 4288677230,
+        "exception_isr": 4288677564,
+        "fill_words": 4288676782,
+        "idle_dma_resume": 4288676554,
+        "idle_drain_resume": 4288677064,
+        "produce": 4288676682,
+        "start_dma": 4288676812,
+        "supervisor": 4288676198,
+        "timer_isr": 4288677496
+      }
+    },
+    "delay-44100": {
+      "case": 1,
+      "image_bytes": 2308,
+      "image_sha256": "ef70dcc89fed4a6aec92a6c8bbe5011824f8192c4e56bd3f20e1d3c81332463f",
+      "rate_hz": 44100,
       "symbols": {
         "_start": 4288676096,
         "codec_configured": 4288678218,
@@ -26,6 +50,30 @@
       "case": 0,
       "image_bytes": 2308,
       "image_sha256": "e84835c648249162dbf9b72d532214bd65c6567071a42c4ccd70ad1e1bd53075",
+      "rate_hz": 48000,
+      "symbols": {
+        "_start": 4288676096,
+        "codec_configured": 4288678218,
+        "codec_failed": 4288677164,
+        "codec_setup": 4288677586,
+        "delay_idle_resume": 4288677006,
+        "dma_isr": 4288677412,
+        "event": 4288677230,
+        "exception_isr": 4288677564,
+        "fill_words": 4288676782,
+        "idle_dma_resume": 4288676554,
+        "idle_drain_resume": 4288677064,
+        "produce": 4288676682,
+        "start_dma": 4288676812,
+        "supervisor": 4288676198,
+        "timer_isr": 4288677496
+      }
+    },
+    "normal-44100": {
+      "case": 0,
+      "image_bytes": 2308,
+      "image_sha256": "3dbba60257ca99ec342e112eb3a3896b184e8c4fb1d6eb4b3907352c22adbabc",
+      "rate_hz": 44100,
       "symbols": {
         "_start": 4288676096,
         "codec_configured": 4288678218,
@@ -48,6 +96,7 @@
       "case": 2,
       "image_bytes": 2308,
       "image_sha256": "6330b3e3f070b9e16a10e33e710a97cf79fa7d83dfd54d517d0b9bedb23bd93a",
+      "rate_hz": 48000,
       "symbols": {
         "_start": 4288676096,
         "codec_configured": 4288678218,
@@ -65,15 +114,61 @@
         "supervisor": 4288676198,
         "timer_isr": 4288677496
       }
+    },
+    "premature-44100": {
+      "case": 2,
+      "image_bytes": 2308,
+      "image_sha256": "e1640e71dbf047e1bed0ad0480a505227aa9bbe3e8888df91caa78374d6a71e5",
+      "rate_hz": 44100,
+      "symbols": {
+        "_start": 4288676096,
+        "codec_configured": 4288678218,
+        "codec_failed": 4288677164,
+        "codec_setup": 4288677586,
+        "delay_idle_resume": 4288677006,
+        "dma_isr": 4288677412,
+        "event": 4288677230,
+        "exception_isr": 4288677564,
+        "fill_words": 4288676782,
+        "idle_dma_resume": 4288676554,
+        "idle_drain_resume": 4288677064,
+        "produce": 4288676682,
+        "start_dma": 4288676812,
+        "supervisor": 4288676198,
+        "timer_isr": 4288677496
+      }
+    },
+    "stop-delay-44100": {
+      "case": 3,
+      "image_bytes": 2416,
+      "image_sha256": "298cc9c62b4ec52890a19df89db32f8ce5782cacde9344f56c674d8eca8dc5d6",
+      "rate_hz": 44100,
+      "symbols": {
+        "_start": 4288676096,
+        "codec_configured": 4288678326,
+        "codec_failed": 4288677272,
+        "codec_setup": 4288677694,
+        "delay_idle_resume": 4288677066,
+        "dma_isr": 4288677520,
+        "event": 4288677338,
+        "exception_isr": 4288677672,
+        "fill_words": 4288676822,
+        "idle_dma_resume": 4288676576,
+        "idle_drain_resume": 4288677124,
+        "produce": 4288676722,
+        "start_dma": 4288676852,
+        "supervisor": 4288676198,
+        "timer_isr": 4288677604
+      }
     }
   },
   "schema": 1,
   "sources": {
-    "build.py": "4e3201f58812a31a64f4171222cc745bf35db0a5a877068fea5f24ac271bea3b",
+    "build.py": "b21732371e269bf53025f5896fc43cd10876271a773fb26695b8658b9514cc7a",
     "codec-macros.inc": "1174414e69e4076f18408f96d9401518364cfc755ca81d7ea8d723cb228dc8ed",
     "codec.inc": "747b96ccc4ec02811cde3aa530c2ab6795cc08e03e09dfea58973162a1f3fe61",
     "link.ld": "5540645a9a878eadc3f498ad89adfd3fd173ddf29740fc67717f5fe719dc8c60",
-    "stream.s": "b277605d4ffa9b769a955cc28cf751836376108a58c9b6bf01bbbc2778944600"
+    "stream.s": "4d031b8e5099c49b1ff0d6df214f7edaff2864ec5b11bc010eb5d8e37d02c8ec"
   },
   "toolchain": "GNU Binutils 2.44, bfin-elf; assembler -mcpu=bf524; no C compiler/runtime"
 }
