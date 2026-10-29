@@ -227,8 +227,10 @@ Native Linux x86_64 and macOS arm64 builds are supported; universal/cross builds
 are rejected explicitly. System fonts are loaded for custom SVG text. The
 bundled artwork has outlined labels and no external image dependencies.
 
-The supplied `gui/op1.svg` is preserved byte for byte (redistribution authorized
-by its provider). Its screen is already blank. The live display still comes
+The supplied `op-skewmorphism.svg` is stored byte for byte as `gui/op1.svg`
+(redistribution authorized by its provider). It supersedes the earlier `op1.svg`
+export and corrects the speech-bubble and metronome symbols. Its screen is
+already blank. The live display still comes
 from the firmware's portrait RGB565 PPI/DMA framebuffer, rotated clockwise and
 mapped onto the configured screen quad. Without a frame, the screen is black.
 No firmware, NAND or OTP data is included.

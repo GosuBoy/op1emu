@@ -38,7 +38,18 @@ The presets assign the same base color to each surface, matching the reference,
 but custom files can set each independently. Colored encoder caps, the volume
 knob, black keys, labels and the live firmware display keep their existing paint.
 
-`gui/op1.svg` remains byte-for-byte unchanged. `gui/op1-themeable.svg` is a
+The improved user-supplied `op-skewmorphism.svg` is stored byte for byte as
+`gui/op1.svg` (SHA-256 `5552baf07981b6dbf59a9585e9a5b41c6b6f3ad883db0e927b633ce7f379513d`).
+It replaces the two upper-left blue-dot symbols with the speech-bubble and
+metronome artwork. Its 1204 × 434 viewport, panel rectangles, filters, masks,
+gradients and instance references match the earlier export. The calibrated
+screen quad and all existing hit regions still apply.
+The revised export passed the four targeted raster/theme/layout CTests and the
+floating/menu harness, including all six live palette changes and all 58 button
+mappings. The running firmware session loaded the improved icons through the
+theme menu without restarting.
+
+`gui/op1-themeable.svg` is a
 class-only derivative: one body, 60 panels, 54 keycaps/rims and four encoder rings.
 resvg 0.49.0 applies the palette through its stylesheet option before parsing.
 The parsed tree and physical-resolution texture use the existing cache. There

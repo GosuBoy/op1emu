@@ -4,9 +4,14 @@
 > representative smoke tests are complete, but broader musical/audio acceptance,
 > compatibility validation and implementation review remain outstanding.
 
-Source: the user's replacement `/Users/javi/Downloads/op1.svg`, explicitly
+These measurements and images record the original frontend verification.
+The later theme experiment uses the improved `op-skewmorphism.svg`; see the
+[artwork and theme record](../../../gui/themes/README.md). The historical
+comparisons below have not been regenerated against that later export.
+
+Baseline source: the user's replacement `/Users/javi/Downloads/op1.svg`, explicitly
 approved for public redistribution. The earlier handoff's `op-skew(1).svg` was
-superseded. `gui/op1.svg` SHA-256:
+superseded. The baseline `gui/op1.svg` SHA-256 was:
 `4a2a4694e251d8295bf6af198d5ec1c6187f38ffc77a493a58eb0fea50ef9de5`.
 The original bytes, all 217 filters, gradients, masks and internal references
 are retained. No external resources, embedded screenshot or static screen content
