@@ -99,10 +99,34 @@ SHA256 of the generated artifacts (also in CI `codec-guest/identities.json`):
 
 ## CI and remaining limits
 
-The implementation CI result is recorded after the branch run completes.
-Native CTest configurations include Linux with/without profiling and Apple
-silicon; the existing GNU fixture rebuild, Python tooling, libc++, frontend and
-legacy jobs remain in place. Only public synthetic captures are uploaded.
+Implementation:
+[`1f62f4c8f6187e8e9d8e402689110d9e658713ad`](https://github.com/GosuBoy/op1emu/commit/1f62f4c8f6187e8e9d8e402689110d9e658713ad).
+[CI run40860133252](https://github.com/GosuBoy/op1emu/actions/runs/40860133252)
+completed successfully on 2026-10-29; all six jobs passed:
+
+- Linux without profiling: 33 CTests, frontend/OpenGL and CLI checks.
+- Linux with profiling: 36 CTests, frontend/OpenGL and CLI checks.
+- Apple silicon macOS15: 33 CTests, frontend and CLI checks.
+- Independent stock GNU Binutils2.44 rebuild: both public LDR images and
+  complete source/symbol manifests match their committed identities.
+- Python tooling: 15 unit tests and 183 pytest tests.
+- libc++ TimeSource build/test.
+
+Downloaded public artifact evidence:
+
+| Configuration | Artifact ID | ZIP SHA256 |
+|---|---|---|
+| Linux, profiling OFF | 12891591172 | `b07a7294d4b1943b457e13b6c04ca72cad439588994b9ca7cdacfd2327118ad5` |
+| Linux, profiling ON | 12890708986 | `b9279819a36a9842957e9896db6c857d8a341ab51b3bc085bfdb79c0c3f7555c` |
+| macOS, profiling OFF | 12891366982 | `f59c8f118b6c8a25c3e6ad1edc64152cb052f785f1e4e9e92c024a33d3476fc3` |
+
+All 61 codec capture/event/driver-log files are byte-identical across these
+three CI configurations and the local run. The 43 comparable existing SPORT
+capture/event/driver-log files are also byte-identical to
+[the previous milestone's CI](https://github.com/GosuBoy/op1emu/actions/runs/40848779291).
+These comparisons exclude normal CLI console logs, which contain build and
+platform details; they include CLI native PCM/CSV. ZIP containers differ in
+metadata and console logs. Only public synthetic captures are uploaded.
 
 See the [component contract](cs42l52-test.md) for explicitly unsupported
 features, power-down clock waveform scope, reset/wiring assumptions and
