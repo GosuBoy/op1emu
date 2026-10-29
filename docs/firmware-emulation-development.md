@@ -137,7 +137,9 @@ unchanged public capture identities and the private observation's limits.
 4. The [deterministic debugger](deterministic-debugger.md) now provides portable
    stop/inspect/resume at exact run/IDLE boundaries, with public audio and
    unchanged private gameplay comparisons. Machine checkpoints, stepping and
-   targeted interrupt/reset qualification remain separate milestones.
+   targeted interrupt/reset qualification remain separate milestones. The
+   [bounded readiness workflow and receipt](firmware-readiness.md) close the
+   current source/build/run/debug/compare baseline without expanding that scope.
 
 ## Keeping the branch maintainable
 

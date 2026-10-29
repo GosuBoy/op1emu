@@ -34,10 +34,12 @@ response parsing. Its emulator/debugger implementation is unchanged.
 [CI 40916758992](https://github.com/GosuBoy/op1emu/actions/runs/40916758992)
 has successful Linux OFF 38/38, Linux ON 41/41, fixture, Python and libc++
 results. The initial macOS job and its isolated retry were both cancelled before any
-steps ran. The final test-only macOS check remains unexecuted; the available
-results do not establish the cancellation cause. The implementation's
-successful macOS run and final local Apple-silicon tests remain separate
-evidence; a queued job is not reported as a passing check.
+steps ran. During the bounded readiness closeout, one further targeted retry
+(attempt 3) executed setup/build/test/upload and passed 38/38 at this exact
+revision, closing the hosted-Mac gap. The cancelled attempts remain historical
+facts; their cause is not established. See the
+[readiness receipt](firmware-readiness.md) for the job/artifact identities and
+separate coverage of the subsequent workflow changes.
 
 All 245 logical PCM/CSV/JSON files and both scripted debugger JSONL logs match
 local output byte for byte in the final Linux artifacts and the successful
@@ -52,3 +54,7 @@ RAM, frames and captures are absent.
 | Linux OFF, test hardening |12916406981|`da7f1c33560744fabc5952b1d06d1fcf2b7a62ce429e40e244db256082706b1a`|
 | Linux ON, test hardening |12915099824|`fc150cc480a190ff39cff266c2c6445516727f7c9461f81ed22c559a6d7d98b2`|
 | macOS OFF, implementation |12915498049|`791f11870cd75060ef7948578a9f23d62404772bd6e0ac5b26b334e114f5e725`|
+
+The hardened-test macOS artifact `12920716563` has SHA256
+`b2c37edaa773371c3ff56579369f394331f5cff0a21860f98dc54f4a74e59de1`.
+All 247 logical files match final local output and the two Linux artifacts.

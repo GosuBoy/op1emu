@@ -333,6 +333,10 @@ if(OP1_BUILD_HEADLESS_TESTS)
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/codec_guest_integration.py
                     $<TARGET_FILE:op1-codec-guest-test> ${CMAKE_CURRENT_BINARY_DIR}/codec-guest $<TARGET_FILE:op1emu>)
         set_tests_properties(op1-codec-guest PROPERTIES TIMEOUT 180 RESOURCE_LOCK usbip-port)
+        add_test(NAME op1-firmware-workflow
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/firmware_workflow_test.py
+                ${CMAKE_CURRENT_BINARY_DIR} ${CMAKE_CURRENT_BINARY_DIR}/readiness-captures)
+        set_tests_properties(op1-firmware-workflow PROPERTIES TIMEOUT 120 RESOURCE_LOCK usbip-port)
         add_test(NAME op1-debugger-integration
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/debugger_integration.py
                 $<TARGET_FILE:op1-stream-guest-test> $<TARGET_FILE:op1-debug> ${CMAKE_CURRENT_BINARY_DIR}/debugger-captures)

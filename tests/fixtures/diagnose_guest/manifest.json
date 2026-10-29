@@ -1,0 +1,86 @@
+{
+  "images": {
+    "corrected": {
+      "image_bytes": 2676,
+      "image_sha256": "98528c35d07b6f584c1eb9aa0edabb8c5deb696c4ba7d3374ed898abceec765d",
+      "source_sha256": "ffdd8a146624eaa130e4fbef58f569328a45d13ad4435ec52bd310dfad055c71",
+      "symbols": {
+        "_start": 4288676096,
+        "codec_configured": 4288678586,
+        "codec_failed": 4288677492,
+        "codec_setup": 4288677954,
+        "delay_idle_resume": 4288677334,
+        "dma_isr": 4288677740,
+        "event": 4288677558,
+        "exception_isr": 4288677932,
+        "fill_words": 4288677110,
+        "idle_dma_resume": 4288676554,
+        "idle_drain_resume": 4288677392,
+        "produce": 4288677010,
+        "start_dma": 4288677140,
+        "supervisor": 4288676198,
+        "timer_isr": 4288677864,
+        "work_resume": 4288676970,
+        "work_wait": 4288676706
+      }
+    },
+    "defective": {
+      "image_bytes": 2676,
+      "image_sha256": "aa3922c3031c091388bd69f9e7dc2c3a7d97916a092207aded241d51015a9ab3",
+      "source_sha256": "3d80815c3cf4737d7f0e5230d289f52a7feb6883b23a3a24f61b69f41c89a651",
+      "symbols": {
+        "_start": 4288676096,
+        "codec_configured": 4288678586,
+        "codec_failed": 4288677490,
+        "codec_setup": 4288677954,
+        "delay_idle_resume": 4288677332,
+        "dma_isr": 4288677740,
+        "event": 4288677556,
+        "exception_isr": 4288677932,
+        "fill_words": 4288677110,
+        "idle_dma_resume": 4288676554,
+        "idle_drain_resume": 4288677390,
+        "produce": 4288677010,
+        "start_dma": 4288677138,
+        "supervisor": 4288676198,
+        "timer_isr": 4288677864,
+        "work_resume": 4288676970,
+        "work_wait": 4288676706
+      }
+    },
+    "reference": {
+      "image_bytes": 2676,
+      "image_sha256": "98528c35d07b6f584c1eb9aa0edabb8c5deb696c4ba7d3374ed898abceec765d",
+      "source_sha256": "ffdd8a146624eaa130e4fbef58f569328a45d13ad4435ec52bd310dfad055c71",
+      "symbols": {
+        "_start": 4288676096,
+        "codec_configured": 4288678586,
+        "codec_failed": 4288677492,
+        "codec_setup": 4288677954,
+        "delay_idle_resume": 4288677334,
+        "dma_isr": 4288677740,
+        "event": 4288677558,
+        "exception_isr": 4288677932,
+        "fill_words": 4288677110,
+        "idle_dma_resume": 4288676554,
+        "idle_drain_resume": 4288677392,
+        "produce": 4288677010,
+        "start_dma": 4288677140,
+        "supervisor": 4288676198,
+        "timer_isr": 4288677864,
+        "work_resume": 4288676970,
+        "work_wait": 4288676706
+      }
+    }
+  },
+  "schema": 1,
+  "sources": {
+    "diagnose_guest/build.py": "a9068fce92a9f45032e47da8653de14851b4b3ef7a862e493d6e3f3416935b47",
+    "stream_guest/build.py": "16b0ec0e3bc9a379c972157667126f4eb8ebcb87e65bf19c10b50049d4d18712",
+    "stream_guest/codec-macros.inc": "1174414e69e4076f18408f96d9401518364cfc755ca81d7ea8d723cb228dc8ed",
+    "stream_guest/codec.inc": "747b96ccc4ec02811cde3aa530c2ab6795cc08e03e09dfea58973162a1f3fe61",
+    "stream_guest/link.ld": "5540645a9a878eadc3f498ad89adfd3fd173ddf29740fc67717f5fe719dc8c60",
+    "stream_guest/stream.s": "ffdd8a146624eaa130e4fbef58f569328a45d13ad4435ec52bd310dfad055c71"
+  },
+  "toolchain": "GNU Binutils 2.44, bfin-elf, -mcpu=bf524; no C compiler/runtime"
+}
