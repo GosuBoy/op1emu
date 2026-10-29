@@ -2,12 +2,14 @@
 #include <cstdint>
 #include <fstream>
 #include <map>
+#include <set>
 #include <string>
 #include <tuple>
 #include <utility>
 #include <vector>
 
 class BlackFinCpu;
+class ObservedMemoryDevice;
 
 // Optional bounded startup diagnostics. Never supplies a clock or device data.
 // Contains guest data; callers choose a private destination for private images.
@@ -18,12 +20,21 @@ public:
     void BeforeRun();
     void Finish(const std::string& reason);
     void AddMemory(uint32_t address, uint32_t bytes);
+    void AddCheckpoint(uint32_t pc);
+    void Checkpoint(const char* label, bool memory = false);
 private:
     void Emit(const std::string& json);
     bool Reserve(const char* category, uint64_t limit);
+    void History(const std::string& json);
     BlackFinCpu& cpu_;
     std::string prefix_;
     std::ofstream events_;
+    std::ofstream hysteresis_;
+    ObservedMemoryDevice* portMux_ = nullptr;
+    uint64_t historyTotal_ = 0, historyWritten_ = 0, historyOmitted_ = 0;
+    uint64_t historyReads_ = 0, historyWrites_ = 0, unattributedChanges_ = 0;
+    uint32_t lastWord_ = 0;
+    std::set<uint32_t> checkpoints_;
     uint64_t eventsWritten_ = 0, omitted_ = 0, nextProgress_ = 0;
     std::map<uint32_t, uint64_t> pcs_;
     std::map<std::string, uint64_t> categoryEvents_, categoryOmissions_;

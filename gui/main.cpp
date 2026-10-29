@@ -118,6 +118,7 @@ static int RunEmulator(int argc, char* argv[]) {
     std::string diagnosticsPrefix;
     std::optional<std::array<u8, 5>> syntheticPanelDdb;
     std::vector<std::pair<uint32_t, uint32_t>> diagnosticMemory;
+    std::vector<uint32_t> diagnosticCheckpoints;
     ExecutionControl execution;
     std::optional<long long> rtcEpoch;
     unsigned twiSpeedup = TWI::kDefaultSpeedup;
@@ -204,7 +205,7 @@ static int RunEmulator(int argc, char* argv[]) {
             for (unsigned n = 0; n < bytes.size(); ++n) bytes[n] = std::stoul(hex.substr(n * 2, 2), nullptr, 16);
             syntheticPanelDdb = bytes;
         }
-        else if (options && (arg == "--max-cycles" || arg == "--max-packets" || arg == "--diagnostics-memory")) {
+        else if (options && (arg == "--max-cycles" || arg == "--max-packets" || arg == "--diagnostics-memory" || arg == "--diagnostics-checkpoint")) {
             if (++i == argc) throw std::runtime_error(arg + " requires a value");
             auto number = [&](const std::string& text) -> uint64_t {
                 size_t used = 0;
@@ -214,7 +215,11 @@ static int RunEmulator(int argc, char* argv[]) {
                 return n;
             };
             const std::string value = argv[i];
-            if (arg == "--diagnostics-memory") {
+            if (arg == "--diagnostics-checkpoint") {
+                const auto pc = number(value);
+                if (pc > UINT32_MAX || pc % 2 || diagnosticCheckpoints.size() == 64) throw std::runtime_error("invalid diagnostic checkpoint");
+                diagnosticCheckpoints.push_back(pc);
+            } else if (arg == "--diagnostics-memory") {
                 const auto colon = value.find(':');
                 if (colon == std::string::npos) throw std::runtime_error("--diagnostics-memory requires ADDRESS:BYTES");
                 const auto address = number(value.substr(0, colon)), bytes = number(value.substr(colon + 1));
@@ -346,6 +351,7 @@ static int RunEmulator(int argc, char* argv[]) {
                      "  --diagnostics PREFIX  Bounded startup events and final state; may contain private guest data\n"
                      "  --synthetic-panel-ddb HEX10  Explicit five-byte panel test reply; physical identity unverified\n"
                      "  --diagnostics-memory ADDRESS:BYTES  Also dump a mapped RAM range (at most 1 MiB)\n"
+                     "  --diagnostics-checkpoint PC  Snapshot once before a run at this PC (at most 64)\n"
                      "  --no-chain            Return to the host after every guest block\n"
                      "  --no-idle-wait        Run an IDLE as a NOP instead of\n"
                      "                        letting guest time pass to the next wakeup\n"
@@ -445,6 +451,16 @@ static int RunEmulator(int argc, char* argv[]) {
 
     // Create BlackFin CPU
     BlackFinCpu cpu(deterministic);
+    if ((!diagnosticMemory.empty() || !diagnosticCheckpoints.empty()) && diagnosticsPrefix.empty())
+        throw std::runtime_error("diagnostic memory/checkpoints require --diagnostics");
+    std::unique_ptr<StartupTrace> startup;
+    if (!diagnosticsPrefix.empty()) {
+        startup = std::make_unique<StartupTrace>(cpu, diagnosticsPrefix);
+        startup->Checkpoint("cpu_constructed");
+        for (auto [address, bytes] : diagnosticMemory) startup->AddMemory(address, bytes);
+        for (auto pc : diagnosticCheckpoints) startup->AddCheckpoint(pc);
+        execution.trace = startup.get();
+    }
     if (!sportTransport && (sportClockHz || !sportCapture.empty() || sportFrameClocks != 64))
         throw std::runtime_error("SPORT clock/capture options require --sport-tx-mode transport");
     if (sportTransport) {
@@ -461,14 +477,6 @@ static int RunEmulator(int argc, char* argv[]) {
     if (syntheticPanelDdb) {
         cpu.SetSyntheticPanelDdb(*syntheticPanelDdb);
         std::cerr << "Synthetic panel DDB profile selected; physical panel identity unverified; results are conditional on this profile\n";
-    }
-    if (!diagnosticMemory.empty() && diagnosticsPrefix.empty())
-        throw std::runtime_error("--diagnostics-memory requires --diagnostics");
-    std::unique_ptr<StartupTrace> startup;
-    if (!diagnosticsPrefix.empty()) {
-        startup = std::make_unique<StartupTrace>(cpu, diagnosticsPrefix);
-        for (auto [address, bytes] : diagnosticMemory) startup->AddMemory(address, bytes);
-        execution.trace = startup.get();
     }
     // An LDR runs with the host looking at the PC after every block
     // (LdrExecutionThread).

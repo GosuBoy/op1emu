@@ -109,7 +109,9 @@ unchanged public capture identities and the private observation's limits.
 ## Next development milestones
 
 1. Resolve the reserved Port G hysteresis readback/initialization-order
-   prerequisite exposed by unchanged startup. Then connect evidenced codec
+   prerequisite using the [complete register-history evidence](portg-hysteresis.md).
+   No dispatch/lane defect was found; physical readback/order remains unverified.
+   Then connect evidenced codec
    state and board clock routing to the transport and compare clock/FS/DMA
    observations with hardware, without forcing clocks through the CLI.
    Resolve the remaining private build dependencies for an exact rebuild.

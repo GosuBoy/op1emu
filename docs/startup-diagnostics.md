@@ -61,8 +61,28 @@ heavy: 100,000 first-seen PCs, 30,000 TWI events, 1,000 panel events, 10,000
 progress events, and 50,000 MMIO events divided among GPIO, timers, TWI,
 SPORT/DMA, interrupt and other controls. Their exact limits are in the first
 event. The final report records capped categories, coalesced/omitted events,
-per-address access totals, and the 128 most frequent run-entry PCs. A capped
+per-address access totals, and the 64 most frequent run-entry PCs. A capped
 trace is not proof that later transactions did not happen.
+
+`PREFIX.portg-hysteresis.jsonl` independently
+records every storage access overlapping `0xFFC03244..47`, with origin, request
+address/width/overlapping data and effective before/after word values. Its separate
+10,000-record budget is unaffected by shared MMIO/display budgets; first overflow
+emits `truncated`, and the summary/final state contain exact totals and omissions.
+The upper half of this four-byte storage word is padding, not a 32-bit hardware
+register. Raw mapping exposure or an unexplained value change prevents a complete
+history claim. Origin is the dispatch scope: guest attended access, loader scope,
+or other host access; nested callbacks inherit that scope. The CLI attaches the
+observer immediately after CPU construction, before configuration or loading.
+
+`--diagnostics-checkpoint PC` (repeatable, at most 64) records one snapshot before
+a CPU run beginning at that PC, including registers and the watched word. It
+also saves configured RAM ranges as `.checkpoint-PC.memory-ADDRESS.bin` files.
+This does not stop inside a compiled run: an instruction address may never be a
+run-entry PC. Unreached checkpoints are reported explicitly. Construction, DXE
+load begin/end and stopped boundaries are recorded without supplying device data.
+See [the hysteresis investigation](portg-hysteresis.md) for access mechanics,
+evidence and the remaining physical observation.
 
 The final report includes stop reason, PC, CPU failure and saved return state,
 registers, guest cycles/retired packets/IDLE cycles, SIC/CEC, GPIO/pin controls

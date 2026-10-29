@@ -1,6 +1,7 @@
 #include "startup_trace.h"
 #include "cpu.h"
 #include "bcore_memory.h"
+#include "observed_memory.h"
 #include "sport.h"
 #include "twi.h"
 #include "peripheral/oled.h"
@@ -13,6 +14,14 @@
 
 using Json = nlohmann::ordered_json;
 
+static const char* OriginName(Emulator::AccessOrigin origin) {
+    switch (origin) {
+        case Emulator::AccessOrigin::Guest: return "guest";
+        case Emulator::AccessOrigin::Loader: return "loader";
+        default: return "host";
+    }
+}
+
 static bool Interesting(uint32_t a) {
     return (a >= 0xffc00000 && a < 0xffc00e00) ||
            (a >= 0xffc01400 && a < 0xffc01800) ||
@@ -23,6 +32,29 @@ static bool Interesting(uint32_t a) {
 StartupTrace::StartupTrace(BlackFinCpu& cpu, std::string prefix) : cpu_(cpu), prefix_(std::move(prefix)) {
     events_.open(prefix_ + ".events.jsonl");
     if (!events_) throw std::runtime_error("cannot open startup events");
+    hysteresis_.open(prefix_ + ".portg-hysteresis.jsonl");
+    if (!hysteresis_) throw std::runtime_error("cannot open Port G history");
+    for (auto* dev : cpu_.emulator.Devices())
+        if (dev->BaseAddress() == 0xffc03200) portMux_ = dynamic_cast<ObservedMemoryDevice*>(dev);
+    if (!portMux_) throw std::runtime_error("Port G observation device unavailable");
+    portMux_->ObserveWord(0x44, [this](const ObservedMemoryDevice::Access& a) {
+        if (!a.mapping) (a.write ? historyWrites_ : historyReads_)++;
+        if (a.before != lastWord_) ++unattributedChanges_;
+        lastWord_ = a.after;
+        History(Json{{"kind", a.mapping ? "raw_mapping_exposed" : a.write ? "write" : "read"},
+                     {"origin", OriginName(cpu_.emulator.Origin())}, {"ns", cpu_.Time().Nanoseconds()},
+                     {"block_pc", cpu_.PC()}, {"address", a.address}, {"bytes", a.bytes},
+                     {"overlap_address", a.overlapAddress}, {"data", a.data},
+                     {"before_word", a.before}, {"after_word", a.after}, {"after_low16", a.after & 0xffff}}.dump());
+    });
+    lastWord_ = portMux_->ObservedWord();
+    hysteresis_ << Json{{"kind", "contract"}, {"schema", 1}, {"address", 0xffc03244u},
+                       {"storage_bytes", 4}, {"hardware_register_bits", 16}, {"max_records", 10000},
+                       {"pc_precision", "basic-block entry; resolve actual instruction from disassembly"},
+                       {"origin", "dispatch scope; nested callbacks inherit scope"},
+                       {"model", "unmodified generic byte storage; not reserved-encoding hardware semantics"}}.dump() << '\n';
+    cpu_.emulator.SetBoundaryObserver([this](const char* label) { Checkpoint(label); });
+    Checkpoint("observer_attached");
     cpu_.bcoreMemory_->SetObserver([this](uint32_t a, unsigned width, bool write, uint32_t value) {
         if (!Interesting(a)) return;
         ++accesses_[{a, width, write}];
@@ -67,9 +99,49 @@ StartupTrace::StartupTrace(BlackFinCpu& cpu, std::string prefix) : cpu_(cpu), pr
 }
 
 StartupTrace::~StartupTrace() {
+    cpu_.emulator.SetBoundaryObserver({});
+    portMux_->ObserveWord(0x44, {});
     cpu_.bcoreMemory_->SetObserver({});
     cpu_.serviced_.twi->SetObserver({});
     cpu_.oled->SetObserver({});
+}
+
+void StartupTrace::History(const std::string& json) {
+    ++historyTotal_;
+    if (historyWritten_ == 10000) {
+        if (!historyOmitted_) hysteresis_ << "{\"kind\":\"truncated\",\"max_records\":10000}\n";
+        ++historyOmitted_;
+        return;
+    }
+    hysteresis_ << json << '\n';
+    ++historyWritten_;
+}
+
+void StartupTrace::AddCheckpoint(uint32_t pc) {
+    if (checkpoints_.size() == 64) throw std::runtime_error("at most 64 diagnostic checkpoints");
+    checkpoints_.insert(pc);
+}
+
+void StartupTrace::Checkpoint(const char* label, bool memory) {
+    const auto word = portMux_->ObservedWord();
+    if (word != lastWord_) ++unattributedChanges_;
+    lastWord_ = word;
+    Json event = {{"kind", "checkpoint"}, {"label", label}, {"origin", OriginName(cpu_.emulator.Origin())},
+                  {"pc", cpu_.PC()}, {"ns", cpu_.Time().Nanoseconds()}, {"word", word},
+                  {"low16", word & 0xffff}, {"dpregs", cpu_.cpuState_->dpregs}, {"memory", Json::array()}};
+    if (memory) {
+        for (auto [address, bytes] : memory_) {
+            std::ostringstream suffix;
+            suffix << ".checkpoint-" << std::hex << cpu_.PC() << ".memory-" << address << ".bin";
+            std::vector<char> data(bytes);
+            cpu_.emulator.MemoryRead(address, data.data(), bytes);
+            std::ofstream file(prefix_ + suffix.str(), std::ios::binary);
+            file.exceptions(std::ios::badbit | std::ios::failbit);
+            file.write(data.data(), data.size());
+            event["memory"].push_back({{"address", address}, {"bytes", bytes}, {"suffix", suffix.str()}});
+        }
+    }
+    History(event.dump());
 }
 
 void StartupTrace::Emit(const std::string& json) {
@@ -87,6 +159,7 @@ bool StartupTrace::Reserve(const char* category, uint64_t limit) {
 
 void StartupTrace::BeforeRun() {
     const auto pc = cpu_.PC();
+    if (!checkpoints_.empty() && checkpoints_.erase(pc)) Checkpoint("requested_pc", true);
     // Limit unique-PC storage as well as the output file.
     if (pcs_.size() < 100000 || pcs_.count(pc)) {
         if (++pcs_[pc] == 1)
@@ -150,6 +223,13 @@ void StartupTrace::Finish(const std::string& reason) {
         auto [address, bytes, write] = item.first;
         accesses.push_back({{"address", address}, {"bytes", bytes}, {"write", write}, {"count", item.second}});
     }
+    Checkpoint("stopped");
+    Json history = {{"address", 0xffc03244u}, {"total", historyTotal_}, {"recorded", historyWritten_},
+                    {"omitted", historyOmitted_}, {"reads", historyReads_}, {"writes", historyWrites_},
+                    {"raw_mapping_exposures", portMux_->MappingExposures()}, {"unattributed_changes", unattributedChanges_},
+                    {"complete", !historyOmitted_ && !portMux_->MappingExposures() && !unattributedChanges_},
+                    {"pending_checkpoints", checkpoints_}};
+    hysteresis_ << Json{{"kind", "summary"}, {"history", history}}.dump() << '\n';
     Json report = {{"schema", 1}, {"stop_reason", reason}, {"pc", cpu_.PC()}, {"cpu_failed", cpu_.Failed()},
                    {"time_model_hz", TimeSource::kHz},
                    {"panel_profile", cpu_.oled->SyntheticDdb() ? Json(*cpu_.oled->SyntheticDdb()) : Json(nullptr)},
@@ -157,7 +237,8 @@ void StartupTrace::Finish(const std::string& reason) {
                    {"seqstat", c.seqstat}, {"retx", c.retx}, {"reti", c.reti}, {"rets", c.rets},
                    {"dpregs", c.dpregs}, {"mmr", registers}, {"sport", ports}, {"pc_run_histogram", histogram}, {"access_counts", accesses},
                    {"events_written", eventsWritten_}, {"events_omitted_or_coalesced", omitted_},
-                   {"category_events", categoryEvents_}, {"category_omissions", categoryOmissions_}, {"memory", Json::array()}};
+                   {"category_events", categoryEvents_}, {"category_omissions", categoryOmissions_},
+                   {"portg_hysteresis_history", history}, {"memory", Json::array()}};
     for (auto [address, bytes] : memory_) {
         std::ostringstream suffix;
         suffix << ".memory-" << std::hex << address << ".bin";
@@ -173,5 +254,8 @@ void StartupTrace::Finish(const std::string& reason) {
     file << report.dump(2) << '\n';
     events_.flush();
     if (!events_) throw std::runtime_error("cannot write startup events");
+    hysteresis_.flush();
+    if (!hysteresis_) throw std::runtime_error("cannot write Port G history");
     events_.close();
+    hysteresis_.close();
 }

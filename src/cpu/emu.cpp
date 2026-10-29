@@ -275,6 +275,7 @@ static Device* WholeMmrAccess(Device* dev, u32 addr, bool hooks)
 template <typename T>
 T Emulator::ReadAttended(u32 addr, bool& hostWork, bool& stable)
 {
+    OriginScope origin(*this, AccessOrigin::Guest);
     const bool hooks = !readHooks.empty() || !writeHooks.empty();
     if (Device* dev = WholeMmrAccess<T>(addr >= 0xFFC00000 ? Find(addr) : nullptr, addr, hooks)) {
         const u32 offset = addr - dev->BaseAddress();
@@ -298,6 +299,7 @@ T Emulator::ReadAttended(u32 addr, bool& hostWork, bool& stable)
 template <typename T>
 void Emulator::WriteAttended(u32 addr, T value, bool& hostWork)
 {
+    OriginScope origin(*this, AccessOrigin::Guest);
     const bool hooks = !readHooks.empty() || !writeHooks.empty();
     if (Device* dev = WholeMmrAccess<T>(addr >= 0xFFC00000 ? Find(addr) : nullptr, addr, hooks)) {
         const u32 offset = addr - dev->BaseAddress();

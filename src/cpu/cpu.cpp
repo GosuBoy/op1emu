@@ -1,4 +1,5 @@
 #include "cpu.h"
+#include "observed_memory.h"
 #include "bcore_memory.h"
 #include "ebiu.h"
 #include "bootrom.h"
@@ -138,7 +139,7 @@ BlackFinCpu::BlackFinCpu(bool deterministic) : time_(deterministic), pc(0) {
 
     auto irqHandler = [this](int q, int level) { this->ProcessInterrupt(q, level); };
     devices.emplace_back(std::make_shared<MemoryDevice>("L1 SRAM", 0xFFB00000, 0x1000));
-    devices.emplace_back(std::make_shared<MemoryDevice>("PORT_MUX", 0xFFC03200, 0x100));
+    devices.emplace_back(std::make_shared<ObservedMemoryDevice>("PORT_MUX", 0xFFC03200, 0x100));
     devices.emplace_back(std::make_shared<MemoryDevice>("Data A",   0xFF800000, 0x4000));
     devices.emplace_back(std::make_shared<MemoryDevice>("Data A Cache", 0xFF804000, 0x4000));
     devices.emplace_back(std::make_shared<MemoryDevice>("Data B",   0xFF900000, 0x4000));

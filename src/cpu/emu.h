@@ -42,6 +42,20 @@ public:
 
 class Emulator {
 public:
+    enum class AccessOrigin { Host, Guest, Loader };
+    class OriginScope {
+    public:
+        OriginScope(Emulator& emu, AccessOrigin origin) : emu_(emu), previous_(emu.origin_) { emu_.origin_ = origin; }
+        ~OriginScope() { emu_.origin_ = previous_; }
+        OriginScope(const OriginScope&) = delete;
+        OriginScope& operator=(const OriginScope&) = delete;
+    private:
+        Emulator& emu_;
+        AccessOrigin previous_;
+    };
+    AccessOrigin Origin() const { return origin_; }
+    void SetBoundaryObserver(std::function<void(const char*)> observer) { boundaryObserver_ = std::move(observer); }
+    void ObserveBoundary(const char* name) { if (boundaryObserver_) boundaryObserver_(name); }
     Emulator();
     virtual ~Emulator() {}
 
@@ -129,6 +143,8 @@ public:
     const std::map<u32, std::function<void(u32, u32)>>& WriteHooks() const { return writeHooks; }
 
 protected:
+    AccessOrigin origin_ = AccessOrigin::Host;
+    std::function<void(const char*)> boundaryObserver_;
     // get_device() for addr, from a small per-thread cache of the addresses
     // looked up last (the same few MMRs, mostly). Exact: an entry holds only
     // for the device map it was looked up in (generation_).

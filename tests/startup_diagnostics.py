@@ -28,7 +28,8 @@ def main():
             assert (prefix.with_suffix(".state.json")).exists(), result.stdout + result.stderr
             return result, json.loads(prefix.with_suffix(".state.json").read_text()), prefix
         result, state, prefix = run("complete", ["--sport-tx-clock", "1000000", "--max-cycles", "2000000",
-                                                 "--diagnostics-memory", "0x2000:128", "--diagnostics-memory", "0x3000:64"])
+                                                 "--diagnostics-memory", "0x2000:128", "--diagnostics-memory", "0x3000:64",
+                                                 "--diagnostics-checkpoint", "0xffa00100"])
         assert result.returncode == 0, result.stdout + result.stderr
         assert state["stop_reason"] == "ldr_return" and state["pc"] == 0x08000000 and not state["cpu_failed"]
         assert state["sport"][0]["accepted"] == state["sport"][0]["transmitted"] == 16
@@ -42,6 +43,16 @@ def main():
         assert any(e["kind"] == "mmio_write" and e["address"] == 0xffc00800 and e["value"] == 0x4401 for e in events)
         assert state["events_written"] == len(events) and state["events_omitted_or_coalesced"] > 0
         assert state["panel_profile"] is None
+        assert state["portg_hysteresis_history"]["complete"]
+        history = [json.loads(line) for line in Path(str(prefix) + ".portg-hysteresis.jsonl").read_text().splitlines()]
+        assert any(e.get("label") == "cpu_constructed" and e["word"] == 0 for e in history)
+        assert any(e.get("label") == "dxe_load_end" for e in history)
+        assert any(e.get("label") == "requested_pc" and e["pc"] == 0xffa00100 for e in history)
+        assert Path(str(prefix) + ".checkpoint-ffa00100.memory-2000.bin").stat().st_size == 128
+        for value in ("1", "0x100000000", "-2"):
+            invalid = subprocess.run(base + ["--diagnostics", work / "bad-pc", "--diagnostics-checkpoint", value],
+                                     cwd=work, capture_output=True, text=True, timeout=30)
+            assert invalid.returncode == 1, value
         result, state, _ = run("panel_profile", ["--max-cycles", "100", "--synthetic-panel-ddb", "123456789a"])
         assert result.returncode == 124 and state["panel_profile"] == [0x12, 0x34, 0x56, 0x78, 0x9a]
         assert "conditional" in result.stderr
