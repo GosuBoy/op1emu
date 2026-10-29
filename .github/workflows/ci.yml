@@ -1,12 +1,12 @@
 name: CI
 
-# Pull requests run once (as pull_request), main once per push; a newer push
-# to a pull request cancels the run still going. Each push to main is a
-# group of its own: in one group a third push would cancel the second's run
-# while it waited.
+# Pull requests run once (as pull_request), main and the independent firmware
+# development branch once per push. A newer push to a pull request cancels
+# the run still going. Each branch push has its own concurrency group so
+# later pushes do not cancel a queued branch validation.
 on:
   push:
-    branches: [main]
+    branches: [main, development/firmware-emulation]
     paths-ignore: ["**.md"]
   pull_request:
     paths-ignore: ["**.md"]

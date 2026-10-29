@@ -3,6 +3,11 @@
 An emulator for the Teenage Engineering OP-1 synthesizer.
 Still work in progress.
 
+This fork's `development/firmware-emulation` branch integrates our current
+contributions for independent firmware-development work. See the
+[development branch guide](docs/firmware-emulation-development.md) for the
+included PRs, validation commands, and next milestones.
+
 Test with op1_246.op1/te-boot.ldr
 
 ![OP-1 Emulator Screenshot](screenshot.png)
@@ -10,7 +15,7 @@ Test with op1_246.op1/te-boot.ldr
 ## Building
 
 ```bash
-git clone https://github.com/op1emu/op1emu.git
+git clone --branch development/firmware-emulation https://github.com/GosuBoy/op1emu.git
 cd op1emu
 git submodule update --init --recursive
 
@@ -25,7 +30,9 @@ cmake --build build
 To create an op1emu NAND image containing the original OP-1 factory content,
 see [NAND provisioning](docs/nand-provisioning.md). This can use an official
 `.op1` update package or an unpacked `content/` directory and requires an
-external `mkyaffs2` utility. Provisioning content does not decrypt firmware.
+external `mkyaffs2` utility. The guide also covers optional local firmware
+decryption with `--otp PATH` or explicitly requested `--fetch-otp` retrieval;
+content-only provisioning does not decrypt firmware.
 
 ## Headless operation
 
@@ -182,6 +189,24 @@ cmake -S . -B build -DOP1_BUILD_HEADLESS_TESTS=ON
 cmake --build build --target op1emu ldrdump op1-headless-test op1-time-source-test
 ctest --test-dir build -R "headless-test|time-source-test|ldr-smoke" --output-on-failure
 ```
+
+## USB
+
+The OP-1's USB port is served over USB/IP, on TCP port 3240. On a Linux host,
+with the `usbip` tool:
+
+```bash
+usbip list -r 127.0.0.1            # 1-1, once the firmware has connected
+sudo modprobe vhci-hcd
+sudo usbip attach -r 127.0.0.1 -b 1-1
+```
+
+The firmware connects to the bus some seconds into its boot (in TE-BOOT, once
+"Upload firmware" is chosen). Until then the list is empty and an attach is
+refused at once, to be tried again. The device is listed as the firmware
+describes it, so as audio and MIDI (2367:0004) normally and as mass storage
+(2367:0002) for a firmware upload. One client is attached at a time: another
+attach is refused as busy until it detaches, and a list does not disturb it.
 
 ## Acknowledgements
 - [bfin_sim](https://github.com/op1emu/bfin_sim) - Blackfin simulator used for CPU emulation, from gdb/sim.
