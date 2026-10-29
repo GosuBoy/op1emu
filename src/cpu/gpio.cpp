@@ -13,7 +13,10 @@ GPIO::GPIO(const std::string& name, u32 baseAddr) : RegisterDevice(name, baseAdd
     REG32(GPIO_CLEAR, 0x04);
     FIELD(GPIO_CLEAR, VAL, 0, 16, R(data), [this](u32 v) {
         u16 oldData = data;
-        data &= ~v;
+        // PORTxIO_CLEAR also acknowledges edge interrupts on input pins.
+        // Preserve externally driven input levels; only output pins may
+        // change their data latch when this register is written.
+        data &= ~(v & dir_output);
         OnDataChanged(oldData);
         // Clear edge interrupts for cleared bits
         bool changed = false;
