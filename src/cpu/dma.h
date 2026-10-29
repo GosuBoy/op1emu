@@ -34,6 +34,9 @@ public:
     // Whether any enabled channel maps to this direction. SPORT suppresses
     // its PIO service interrupt while the corresponding DMA is enabled.
     virtual void SetDMAEnabled(bool toMemory, bool enabled) {}
+    // The opt-in SPORT transport qualifies a separate four-word DMA TX FIFO
+    // for linear 32-bit FLOW=STOP work units. Other buses retain their model.
+    virtual bool BufferedTransmit() const { return false; }
     // Width of the current channel's memory element, before a bus transfer.
     // A short peripheral write must accept whole DMA elements as well as
     // whole peripheral words (e.g. two 16-bit SPORT words per 32-bit element).
@@ -129,6 +132,23 @@ enum DMAPeripheralType {
 class DMAChannel;
 class DMA : public RegisterDevice, public PageWatcher {
 public:
+    struct TxSnapshot {
+        bool modeled, running, done, sync;
+        u32 address, remaining, buffered;
+        uint64_t work, read, accepted;
+    };
+    struct TxEvent {
+        uint64_t ns;
+        unsigned channel;
+        const char* operation;
+        uint64_t work;
+        u32 address, value;
+        TxSnapshot state;
+    };
+    using TxObserver = std::function<void(const TxEvent&)>;
+    void SetTxObserver(TxObserver observer) { txObserver_ = std::move(observer); }
+    TxSnapshot InspectTx(unsigned channel) const;
+    void ObserveTx(const TxEvent& event) const { if (txObserver_) txObserver_(event); }
     // Without a time source no bus is paced (CyclesPerElement is ignored).
     DMA(u32 baseAddr, Emulator& emu, const TimeSource* time = nullptr);
 
@@ -221,6 +241,7 @@ protected:
     void UpdateBusEnables();
 
     bool touched_ = true;
+    TxObserver txObserver_;
     uint64_t idleUntil_ = 0;
     unsigned idleSource_ = 0;
     const TimeSource* time_;

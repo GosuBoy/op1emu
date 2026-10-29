@@ -100,7 +100,7 @@ static void NoClockAndRestart() {
         Rig r; r.Config(bits); r.StartDMA(32, bits / 8);
         const unsigned capacity = bits == 16 ? 8 : 4;
         Check(r.State().accepted == capacity && r.State().transmitted == 0, "no clock: only documented FIFO capacity accepted");
-        Check(r.R(kChannel + 0x30) == 32 - capacity, "DMA count tracks peripheral acceptance");
+        Check(r.R(kChannel + 0x30) == 32 - capacity - (bits == 32 ? 4 : 0), "32-bit DMA memory count includes controller prefetch");
         Check(r.R(kSport + 0x30) == 0x48, "clockless TXF set, TXHRE empty, no underflow");
         r.To(100'000);
         Check(r.State().accepted == capacity && r.words.empty(), "clockless interval has no output or DMA progress");

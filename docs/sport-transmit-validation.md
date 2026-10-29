@@ -1,5 +1,12 @@
 # SPORT transport validation record
 
+**Historical checkpoint:** results below remain bound to their recorded commits.
+The later [streaming/DMA FIFO qualification](streaming-audio.md) corrects
+32-bit finite TX memory counts, SYNC0 completion timing and drain guards.
+Current source/image/event identities are recorded in that milestone; earlier
+identities are retained here as historical evidence.
+
+
 This records the first, host-driven MMIO milestone. The subsequent
 [guest-executed milestone](sport-guest-validation.md) adds CPU/IDLE/ISR evidence
 and updates the status of private integration inputs; the results below

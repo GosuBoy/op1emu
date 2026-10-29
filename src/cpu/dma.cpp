@@ -4,6 +4,8 @@
 #include <stdint.h>
 #include <algorithm>
 #include <cassert>
+#include <deque>
+#include <cstring>
 
 enum DMANextOperation {
     Stop = 0x0,
@@ -48,6 +50,7 @@ public:
 
     // At guest cycle `now`, as a service then.
     u32 ProcessTransfer(uint64_t now);
+    DMA::TxSnapshot InspectTx() const;
 
 protected:
     void ProcessDescriptor();
@@ -56,6 +59,14 @@ protected:
     // ProcessTransfer() may leave the chunk's elements [from, to) (in bytes)
     // unread: they lie in plain memory.
     bool QuietSource(u32 from, u32 to, u32 elementBytes) const;
+    bool BufferedTx() const;
+    u32 ProcessBufferedTx(DMABus& bus);
+    void TxEvent(const char* operation, uint64_t work, u32 address = 0, u32 value = 0) const;
+    void TxComplete();
+    struct TxWord { u32 address, value; uint64_t work; };
+    std::deque<TxWord> txFifo_;
+    uint64_t txWork_ = 0, txRead_ = 0, txAccepted_ = 0;
+    bool txCompletion_ = false;
 
     DMA& dma;
 
@@ -115,6 +126,7 @@ DMAChannel::DMAChannel(const std::string& name, u32 baseAddr, DMA& dma, u16 defa
         next = (DMANextOperation)v;
     });
     CONFIG.writeCallback = [this](u32 value) {
+        if (!enabled) txFifo_.clear();
         running = enabled;
         if (enabled && this->dma.Time()) pacedFrom_ = this->dma.Time()->Cycles();
         if (enabled && IsMDMASource()) {
@@ -122,6 +134,10 @@ DMAChannel::DMAChannel(const std::string& name, u32 baseAddr, DMA& dma, u16 defa
             if (auto* bus = this->dma.GetDMABus(peripheralType)) bus->DMAFlush();
         }
         ProcessDescriptor();
+        if (enabled && BufferedTx()) {
+            ++txWork_; txRead_ = txAccepted_ = 0; txCompletion_ = false;
+            TxEvent("start", txWork_);
+        }
         // NFC DMA is an unpaced 512-byte controller transfer. Running it only
         // from the global one-channel-per-BB round robin lets the previous
         // WR_DONE interrupt advance the firmware's sector state machine before
@@ -228,6 +244,11 @@ uint64_t DMAChannel::IdleUntil() const {
     // ProcessTransfer() logs a missing bus on every call.
     DMABus* bus = dma.GetDMABus(peripheralType);
     if (!bus) return 0;
+    if (BufferedTx()) {
+        if (currXCount && txFifo_.size() < 4) return 0; // Independent memory-side prefetch.
+        bus->SetDMAElementBytes(4);
+        return bus->DMAIdleUntil(false, u32(txFifo_.size()) * 4);
+    }
     // The length ProcessTransfer() offers the bus.
     const u32 elementBytes = 1u << wordSize;
     const u32 length = std::min(u32(currXCount) * elementBytes, 4096u);
@@ -333,6 +354,7 @@ u32 DMAChannel::ProcessTransfer(uint64_t now) {
         LogWarn("DMA channel %s: No DMA bus attached for peripheral type %d", Name().c_str(), peripheralType);
         return 0;
     }
+    if (BufferedTx()) return ProcessBufferedTx(*bus);
 
     int elementBytes = 1 << wordSize;
     u32 totalBytes = currXCount * elementBytes;
@@ -416,6 +438,79 @@ u32 DMAChannel::ProcessTransfer(uint64_t now) {
     }
 
     return count * elementBytes;
+}
+
+bool DMAChannel::BufferedTx() const {
+    const auto* bus = dma.GetDMABus(peripheralType);
+    return bus && bus->BufferedTransmit() && !memoryWrite && wordSize == 2 &&
+           !mode2D && !descriptorSize && next == DMANextOperation::Stop;
+}
+
+DMA::TxSnapshot DMAChannel::InspectTx() const {
+    return {BufferedTx(), running, completed, synchronized, currAddr, currXCount,
+            u32(txFifo_.size()), txWork_, txRead_, txAccepted_};
+}
+
+void DMAChannel::TxEvent(const char* operation, uint64_t work, u32 address, u32 value) const {
+    dma.ObserveTx({dma.Time() ? dma.Time()->Nanoseconds() : 0,
+                   unsigned((BaseAddress() - dma.BaseAddress()) / 0x40),
+                   operation, work, address, value, InspectTx()});
+}
+
+void DMAChannel::TxComplete() {
+    if (txCompletion_) return;
+    txCompletion_ = true;
+    if (dataInterruptEnabled) {
+        completed = true;
+        TriggerInterrupt(1);
+    }
+    ++events_;
+    TxEvent("complete", txWork_);
+}
+
+u32 DMAChannel::ProcessBufferedTx(DMABus& bus) {
+    // BF52x HRM 6-6, 6-20..23: memory reads fill the channel's four-word
+    // FIFO independently of peripheral grants. CURR_* track memory reads.
+    // SYNC0 completion precedes FIFO drain; SYNC1 waits for peripheral
+    // acceptance. Neither is a SPORT serial-completion indication.
+    // Bus arbitration/fetch latency is not invented: this is functional
+    // ordering at the service's guest time, not a cycle-accurate DMA bus.
+    u32 moved = 0;
+    bus.SetDMAElementBytes(4);
+    for (;;) {
+        bool progress = false;
+        if (!txFifo_.empty()) {
+            u32 data[4];
+            for (unsigned i = 0; i < txFifo_.size(); ++i) data[i] = txFifo_[i].value;
+            const auto bytes = bus.DMAWrite(0, 0, data, u32(txFifo_.size()) * 4);
+            assert(bytes % 4 == 0 && bytes <= txFifo_.size() * 4);
+            for (unsigned n = 0; n < bytes / 4; ++n) {
+                auto word = txFifo_.front(); txFifo_.pop_front();
+                ++txAccepted_; moved += 4;
+                TxEvent("accept", word.work, word.address, word.value);
+            }
+            progress |= bytes != 0;
+        }
+        if (currXCount && txFifo_.size() < 4) {
+            u32 value = 0;
+            dma.GetEmulator().MemoryRead(currAddr, &value, 4);
+            const auto address = currAddr;
+            txFifo_.push_back({address, value, txWork_});
+            currAddr += xModify; --currXCount; ++txRead_; moved += 4;
+            TxEvent("read", txWork_, address, value);
+            progress = true;
+        }
+        if (!currXCount && txFifo_.empty()) {
+            running = false; TxComplete(); TxEvent("drained", txWork_); break;
+        }
+        if (!currXCount && !synchronized) TxComplete();
+        if (!progress) break;
+    }
+    return moved;
+}
+
+DMA::TxSnapshot DMA::InspectTx(unsigned channel) const {
+    return channel < channels.size() ? channels[channel]->InspectTx() : TxSnapshot{};
 }
 
 u32 MemorySrcDMABus::DMAWriteTake(u32 length) const {

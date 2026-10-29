@@ -113,6 +113,11 @@ unchanged public capture identities and the private observation's limits.
    declared synthetic MCLK/reset/wiring replace a directly forced SPORT clock.
    Extend this bounded component model only with documented behavior and public
    regressions. Component testing does not identify the physical OP-1 codec.
+   The [sustained streaming fixture](streaming-audio.md) now exercises 256
+   guest-produced blocks, two reusable buffers, SYNC-dependent DMA FIFO
+   completion, actual guest interrupts and independent sample/cadence checks.
+   Next connect the recovered mixer through the producer interface, with an
+   explicitly selected output rate and the pinned private build dependencies.
 2. Keep R4 hardware qualification blocked on the [completed hysteresis investigation](portg-hysteresis.md).
    No dispatch/lane defect was found. Preserve raw `0x0008` storage, unchanged
    guest admission, synthetic panel status, baseline and conditional traces.
@@ -120,8 +125,9 @@ unchanged public capture identities and the private observation's limits.
    evidence. Physical codec/reset/MCLK/routing and the exact private rebuild
    remain separate dependencies; then compare initialization and audio behavior.
    Qualify additional DMA prefetch/SYNC and descriptor behavior where evidenced.
-3. Extend deterministic controls and native capture for gameplay, display,
-   mixer and streaming regressions, keeping host playback separate.
+3. Extend qualified DMA modes to the descriptor/prefetch semantics actually
+   required by a recovered hardware driver. Continue deterministic gameplay,
+   display and mixer integration, keeping host playback separate.
 4. Develop portable guest inspection/debugging, then machine checkpoints and
    targeted interrupt/reset qualification.
 

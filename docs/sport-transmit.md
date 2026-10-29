@@ -61,7 +61,7 @@ DMA position/full TX remain evidence of a stall to investigate.
 | No clock | A cold FIFO can fill, then DMA returns zero and keeps its current address/count. No serial word completes and TUVF is not invented from elapsed wall time. |
 | No FS | With clocks present, a holding word can stage. No new framed word starts. A word already shifting can finish. |
 | Stop/restart | Clock stop freezes partial bits and oscillator phase. Restart resumes them; no credit accrues during the stopped interval. |
-| Transmission | An accepted word completes only after its serial word clocks. DMA_DONE describes acceptance, and may precede every serial completion. SPORT drains after DMA stops. |
+| Transmission | An accepted word completes only after its serial word clocks. For qualified 32-bit finite DMA, SYNC0 DONE describes final memory read; SYNC1 waits for peripheral acceptance. Both can precede serial drain. SPORT drains after DMA stops. |
 | Status | TXF describes the FIFO, TXHRE is 1 when the holding register is empty. Full PIO writes are discarded and set TOVF. Empty active framing sets TUVF. Error bits are sticky/W1C; zero does not acknowledge them. |
 | Underrun | External or data-independent internal FS repeats the last known word, marked `repeated=1`. Before any known word, slots are marked `valid=0`; no arbitrary zero is written to PCM. Data-dependent internal FS suppresses empty frames. |
 | Interrupts | PIO TX service is a level while enabled with FIFO space, suppressed by mapped TX DMAEN. SPORT0 error is SIC8 and TX/DMA4 shares SIC17; SPORT1 uses SIC9/19. DMA and PIO levels are ORed; DMA_DONE W1C cannot erase a PIO request. |
@@ -84,12 +84,13 @@ configuration while enabled likewise requires disable/re-enable before
 progress resumes. These are outside the qualified subset, not invented
 hardware error flags. Configure clock sources and dividers before enabling.
 
-The DMA controller's separate four-element hardware FIFO, descriptor fetch
-latency, SYNC-dependent memory-side vs peripheral-side completion timing,
-cache coherence and arbitration remain outside this milestone. Existing DMA
-counts describe words accepted by this peripheral model; they cannot be used
-as exact BF524 memory-prefetch or wire-drain measurements. SPORT RX retains its
-legacy model. This is not a full-duplex hardware qualification.
+The later [streaming qualification](streaming-audio.md) adds the controller's
+separate four-word FIFO and SYNC0/SYNC1 ordering for linear, 32-bit,
+FLOW=STOP memory-to-transport work units. Memory-side address/counts can now
+lead SPORT acceptance by four words; DONE is not serial drain. Other DMA
+widths/modes, descriptor prefetch/timing, cache coherence and arbitration are
+outside that qualification and retain their earlier approximation. SPORT RX
+retains its legacy model. This is not full-duplex hardware qualification.
 
 ## Reproduce without firmware or a sound device
 

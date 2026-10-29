@@ -36,6 +36,7 @@ jobs:
         run: |
           python3 tests/fixtures/sport_guest/build.py --as /tmp/binutils-build/gas/as-new --ld /tmp/binutils-build/ld/ld-new --check
           python3 tests/fixtures/codec_guest/build.py --as /tmp/binutils-build/gas/as-new --ld /tmp/binutils-build/ld/ld-new --check
+          python3 tests/fixtures/stream_guest/build.py --as /tmp/binutils-build/gas/as-new --ld /tmp/binutils-build/ld/ld-new --check
 
   python:
     runs-on: ubuntu-22.04
@@ -198,6 +199,7 @@ jobs:
             build/sport-clockless.*
             build/sport-guest/
             build/codec-guest/
+            build/stream-guest/
 
       - name: OpenGL shell regression (Linux)
         if: runner.os == 'Linux'

@@ -33,6 +33,7 @@ public:
     u32 Take(u32 bytes) const;
     u32 Accept(const void* data, u32 bytes);
     Snapshot Inspect();
+    Snapshot Peek() const; // Passive observation; never advances a peripheral.
     struct ExternalInputs { u32 bitHz, frameClocks; bool clock, sync; };
     ExternalInputs InspectExternalInputs() const { return {externalHz_, externalFrameClocks_, clockPresent_, syncPresent_}; }
 

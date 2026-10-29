@@ -58,7 +58,7 @@ def main():
                 assert any(e["clock_reason"] == "slave_no_external_serial_source" for e in writes)
                 assert any(e["bit_hz"] == 3072000 and e["frame_hz"] == 48000 and
                            e["master_mute"] == 3 and e["output_mute"] == 15 for e in writes)
-                assert report["serialized_at_dma_isr"] == 10
+                assert report["serialized_at_dma_isr"] == 6
             if mode == "pause":
                 clocks = [e for e in report["codec_events"] if e["operation"] == "mclk"]
                 assert [e["after"] for e in clocks] == [0, 12288000]

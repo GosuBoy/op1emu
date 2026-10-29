@@ -93,7 +93,7 @@ fill_samples:
     R0 = 0;
     [P0] = R0;
     [P0 + 8] = R0;
-    SET32 R0, 260000
+    SET32 R0, 420000
     [P0 + 4] = R0;
     R0 = 3; /* TMPWR | TMREN, no autoreload */
     [P0] = R0;
@@ -151,13 +151,13 @@ after_dma:
     [P5 + 16] = R0;
     R0 = 3;
     [P5 + 4] = R0;
-    /* DMA accepted its final word, but up to six SPORT words remain.
-     * At the codec-derived 3.072 MHz/32-bit rate, wait65 us after RTI.
+    /* DMA accepted its final word, but four DMA plus six SPORT words may remain.
+     * At the codec-derived 3.072 MHz/32-bit rate, wait105 us after RTI.
      * The final new word finishes before this; a tail replay cannot finish. */
     SET32 P0, 0xffe03000
     R0 = 0;
     [P0] = R0;
-    SET32 R0, 26000
+    SET32 R0, 42000
     [P0 + 4] = R0;
     R0 = CYCLES;
     [P5 + 40] = R0;

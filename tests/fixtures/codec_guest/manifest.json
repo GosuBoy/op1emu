@@ -1,10 +1,10 @@
 {
   "image_bytes": 1700,
-  "image_sha256": "0d9a25c40b969f756d503de0b8721f09b8a41deb21de46fff895b90cb916413b",
+  "image_sha256": "019020eacf382b84933557242621d9a23d0ce7ac2617e44cd244117833a176d1",
   "schema": 1,
   "sources": {
     "build.py": "7702e92b2e1e239c6a5c9cdca51f1ccd5463392684688064b455107118263d6b",
-    "diagnostic.s": "69f176790eb0599cd81bb4c0be05b2d43e823bf0e90423f8c1fc6c5f7e665800",
+    "diagnostic.s": "172bc0c7f73891c83c6c8b988360420e398b2563dbe352560ae2319916de9cbb",
     "link.ld": "5540645a9a878eadc3f498ad89adfd3fd173ddf29740fc67717f5fe719dc8c60"
   },
   "symbols": {

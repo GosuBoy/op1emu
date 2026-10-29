@@ -221,7 +221,13 @@ u32 SportTxTransport::Accept(const void* data, u32 bytes) {
 }
 
 SportTxTransport::Snapshot SportTxTransport::Inspect() {
-    const auto status = u16(Read(0x30));
+    Advance();
+    return Peek();
+}
+
+SportTxTransport::Snapshot SportTxTransport::Peek() const {
+    const auto status = u16((fifo_.size() >= Capacity() ? 8 : 0) | (underflow_ ? 16 : 0) |
+                           (overflow_ ? 32 : 0) | (!hold_ ? 64 : 0));
     return {accepted_, transmitted_, underflows_, overflows_, fifo_.size(), bool(hold_), bool(shift_), Supported(), status};
 }
 

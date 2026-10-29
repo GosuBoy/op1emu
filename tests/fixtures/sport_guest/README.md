@@ -12,7 +12,7 @@ initializes scratch stack `0xffb01000`, mailbox `0x2000`, and samples `0x3000`.
 Assembler and linker: **GNU Binutils 2.44, target bfin-elf**. No C compiler is
 used. The committed image is 868 bytes, SHA256:
 
-`0aca5665cdf84c6bcdffb972d568b868d5706cada7d9ead8289576e422ed9e60`
+`ddaa636d2deb5cb91c1a05173bea3fa111e74a6e62984d6c781cd15f09b02789`
 
 Rebuild using a suitable Binutils installation:
 
@@ -68,7 +68,7 @@ host executable hashes naturally differ.
 6. Wait using IDLE. On DMA_DONE, the actual IVG9 guest ISR saves/restores
    ASTAT and its working registers, records RETI/IPEND/current DMA/SPORT,
    acknowledges DONE by W1C, and returns with RTI. Main records `RTI9`.
-7. Rearm the core timer for 80000 cycles (200 us), continue IDLE while SPORT
+7. Rearm the core timer for 128400 cycles (321 us), continue IDLE while SPORT
    drains, then disable SPORT, record `PASS` and jump to the normal LDR return
    sentinel `0x08000000`. Without a clock, the original timer ISR wakes main,
    which records `STAL` and returns with DMA/SPORT still enabled for inspection.
@@ -161,3 +161,10 @@ acknowledgment, correct return and no subsequent delivery during drain.
 
 See [validation results](../../../docs/sport-guest-validation.md) for measured
 event times, capture identities, CI links and remaining private dependencies.
+
+The streaming milestone qualifies a separate four-word controller FIFO for
+32-bit finite TX DMA. With SYNC0, DONE now means the final source read; RUN
+can remain set while that FIFO drains. The current image uses a derived
+321 us drain guard for four DMA plus six SPORT words. No-clock DMA
+reads eight words (four accepted by SPORT plus four held in DMA), leaving
+count8/address3020 in this 16-word test. See [DMA qualification and streaming](../../../docs/streaming-audio.md).

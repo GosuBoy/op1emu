@@ -110,13 +110,13 @@ fail while still writing diagnostics.
 | Same guest image, declared external input | Required outcome |
 |---|---|
 | MCLK=12.288 MHz | PASS; 16 DMA-accepted words, one guest DMA ISR, 16 serialized words while mute requests remain asserted |
-| MCLK absent | Control configuration/readback succeeds; guest watchdog wakes IDLE; STAL, four FIFO words accepted, DMA count12/address3010, no serialized words |
+| MCLK absent | Control configuration/readback succeeds; guest watchdog wakes IDLE; STAL, four FIFO words accepted, DMA count8/address3020, no serialized words |
 | RESET externally held low | Initial reset rejection followed by bounded CFAI at post-release probe; no SPORT/DMA submission or serialized output |
 | MCLK interrupted for 50 µs | Queued interruption while TX active; transport freezes/resumes, exact same 16 samples, shifted timestamps, one DMA ISR. Records intentional early-MCLK-removal diagnostic, not valid analog shutdown. |
 
 The successful run interrupts guest IDLE at IVG9. The guest stores `DMA9`,
-observes DMA_DONE, acknowledges W1C, returns via RTI and stores `RTI9`. Ten words
-have serialized at interrupt entry; six remain. A 26000-cycle/65 µs guest timer
+observes DMA_DONE, acknowledges W1C, returns via RTI and stores `RTI9`. Six words
+have serialized at interrupt entry; four DMA and six SPORT words remain. A 42000-cycle/105 µs guest timer
 guard drains them before SPORT is disabled, ahead of a completed underrun
 replay. The model latches one underflow at the empty next slot, but captures
 exactly the 16 valid new words. No repeated interrupt remains after acknowledgment.

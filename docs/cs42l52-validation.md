@@ -1,5 +1,12 @@
 # CS42L52 component validation
 
+**Historical checkpoint:** results below remain bound to their recorded commits.
+The later [streaming/DMA FIFO qualification](streaming-audio.md) corrects
+32-bit finite TX memory counts, SYNC0 completion timing and drain guards.
+Current source/image/event identities are recorded in that milestone; earlier
+identities are retained here as historical evidence.
+
+
 The independent digital component test uses only public synthetic inputs. It
 preserves the earlier R4 refusal and does not qualify any physical OP-1 part,
 wiring, oscillator, analog startup or output.

@@ -1,0 +1,79 @@
+{
+  "images": {
+    "delay": {
+      "case": 1,
+      "image_bytes": 2308,
+      "image_sha256": "b487a90f1bb6e777e8a49fdc6463c4b5f48fa4a439ef2e1bcad1bc676169dcc5",
+      "symbols": {
+        "_start": 4288676096,
+        "codec_configured": 4288678218,
+        "codec_failed": 4288677164,
+        "codec_setup": 4288677586,
+        "delay_idle_resume": 4288677006,
+        "dma_isr": 4288677412,
+        "event": 4288677230,
+        "exception_isr": 4288677564,
+        "fill_words": 4288676782,
+        "idle_dma_resume": 4288676554,
+        "idle_drain_resume": 4288677064,
+        "produce": 4288676682,
+        "start_dma": 4288676812,
+        "supervisor": 4288676198,
+        "timer_isr": 4288677496
+      }
+    },
+    "normal": {
+      "case": 0,
+      "image_bytes": 2308,
+      "image_sha256": "e84835c648249162dbf9b72d532214bd65c6567071a42c4ccd70ad1e1bd53075",
+      "symbols": {
+        "_start": 4288676096,
+        "codec_configured": 4288678218,
+        "codec_failed": 4288677164,
+        "codec_setup": 4288677586,
+        "delay_idle_resume": 4288677006,
+        "dma_isr": 4288677412,
+        "event": 4288677230,
+        "exception_isr": 4288677564,
+        "fill_words": 4288676782,
+        "idle_dma_resume": 4288676554,
+        "idle_drain_resume": 4288677064,
+        "produce": 4288676682,
+        "start_dma": 4288676812,
+        "supervisor": 4288676198,
+        "timer_isr": 4288677496
+      }
+    },
+    "premature": {
+      "case": 2,
+      "image_bytes": 2308,
+      "image_sha256": "6330b3e3f070b9e16a10e33e710a97cf79fa7d83dfd54d517d0b9bedb23bd93a",
+      "symbols": {
+        "_start": 4288676096,
+        "codec_configured": 4288678218,
+        "codec_failed": 4288677164,
+        "codec_setup": 4288677586,
+        "delay_idle_resume": 4288677006,
+        "dma_isr": 4288677412,
+        "event": 4288677230,
+        "exception_isr": 4288677564,
+        "fill_words": 4288676782,
+        "idle_dma_resume": 4288676554,
+        "idle_drain_resume": 4288677064,
+        "produce": 4288676682,
+        "start_dma": 4288676812,
+        "supervisor": 4288676198,
+        "timer_isr": 4288677496
+      }
+    }
+  },
+  "schema": 1,
+  "sources": {
+    "build.py": "4e3201f58812a31a64f4171222cc745bf35db0a5a877068fea5f24ac271bea3b",
+    "codec-macros.inc": "1174414e69e4076f18408f96d9401518364cfc755ca81d7ea8d723cb228dc8ed",
+    "codec.inc": "747b96ccc4ec02811cde3aa530c2ab6795cc08e03e09dfea58973162a1f3fe61",
+    "link.ld": "5540645a9a878eadc3f498ad89adfd3fd173ddf29740fc67717f5fe719dc8c60",
+    "stream.s": "b277605d4ffa9b769a955cc28cf751836376108a58c9b6bf01bbbc2778944600"
+  },
+  "toolchain": "GNU Binutils 2.44, bfin-elf; assembler -mcpu=bf524; no C compiler/runtime"
+}

@@ -35,6 +35,7 @@ public:
     void Write32(u32 offset, u32 value) override;
     void ProcessWithInterrupt(int ivg) override;
     void SetDMAEnabled(bool toMemory, bool enabled) override;
+    bool BufferedTransmit() const override { return txTransportEnabled_; }
     // Explicit opt-in keeps the original 44.1 kHz DMA audio approximation
     // available to existing firmware runs and its integration regressions.
     void EnableTxTransport() { txTransportEnabled_ = true; }

@@ -133,7 +133,7 @@ int main(int argc, char** argv) {
               "guest did not execute DMA ISR, return and publish PASS");
         check(m("dma_entries") == 1 && m("dma_count_at_isr") == 0 && m("dma_address_at_isr") == 0x3040,
               "missed/repeated DMA completion interrupt or wrong DMA acceptance");
-        check(m("irq_before_ack") == 1 && m("irq_after_ack") == 0 && (m("ipend_at_isr") & 0x200),
+        check(m("irq_before_ack") == 9 && m("irq_after_ack") == 8 && (m("ipend_at_isr") & 0x200),
               "guest DMA W1C acknowledgment/IVG9 state incorrect");
         check(words.size() == 16 && state.accepted == 16 && state.transmitted == 16, "incomplete/extra serialized output");
         check(report["dma"]["irq"] == 0 && report["sport"]["tcr1"] == 0 && state.fifo == 0 &&
@@ -150,12 +150,12 @@ int main(int argc, char** argv) {
         report["serialized_at_dma_isr"] = atIsr;
         check(atIsr > 0 && atIsr < 16 && !words.empty() && words.back().ns > uint64_t(m("dma_ack_cycles")) * 5 / 2,
               "DMA completion was conflated with transport drain");
-        check(m("timer_phase") == 3 && m("timer_entry_cycles") > m("guard_start_cycles") + 79'999,
+        check(m("timer_phase") == 3 && m("timer_entry_cycles") > m("guard_start_cycles") + 128'399,
               "post-DMA drain guard did not run");
     } else {
         check(m("signature") == 0x5354414c && m("dma_entries") == 0 && m("isr_tag") == 0 && m("after_rti") == 0,
               "clockless guest unexpectedly completed DMA");
-        check(m("timer_phase") == 2 && m("final_dma_count") == 12 && m("final_dma_address") == 0x3010,
+        check(m("timer_phase") == 2 && m("final_dma_count") == 8 && m("final_dma_address") == 0x3020,
               "clockless DMA did not stall after finite FIFO acceptance");
         check(state.accepted == 4 && state.fifo == 4 && !state.holding && !state.shifting && words.empty() &&
               state.transmitted == 0 && state.status == 0x48 && state.overflows == 0 && state.underflows == 0,
