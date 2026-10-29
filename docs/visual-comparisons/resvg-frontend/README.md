@@ -5,7 +5,7 @@
 > compatibility validation and implementation review remain outstanding.
 
 These measurements and images record the original frontend verification.
-The later theme experiment uses the improved `op-skewmorphism.svg`; see the
+The later theme experiment uses the improved `op-skew.svg`; see the
 [artwork and theme record](../../../gui/themes/README.md). The historical
 comparisons below have not been regenerated against that later export.
 

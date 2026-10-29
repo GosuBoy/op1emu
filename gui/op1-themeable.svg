@@ -310,8 +310,8 @@
 <rect x="107.493" y="133.277" width="5.0132" height="5.0132" rx="2.5066" fill="url(#paint148_radial_1452_16035)" fill-opacity="0.87"/>
 </g>
 <g filter="url(#filter2_f_1452_16035)">
-<rect class="op1-panel" x="150.212" y="20.3364" width="127.842" height="62.3685" rx="3.85423" fill="#A7A7A7"/>
-<rect x="150.387" y="20.5115" width="127.491" height="62.0181" rx="3.67904" stroke="white" stroke-opacity="0.51" stroke-width="0.350385"/>
+<rect class="op1-panel" x="151.212" y="20.3364" width="127.842" height="62.3685" rx="3.85423" fill="#A7A7A7"/>
+<rect x="151.387" y="20.5115" width="127.491" height="62.0181" rx="3.67904" stroke="white" stroke-opacity="0.51" stroke-width="0.350385"/>
 </g>
 <g filter="url(#filter3_d_1452_16035)">
 <use xlink:href="#stroke0_1452_16035" fill="#9D9D9D"/>
@@ -1354,7 +1354,7 @@
 <feBlend mode="normal" in="SourceGraphic" in2="BackgroundImageFix" result="shape"/>
 <feGaussianBlur stdDeviation="0.853816" result="effect1_foregroundBlur_1452_16035"/>
 </filter>
-<filter id="filter2_f_1452_16035" x="149.861" y="19.986" width="128.542" height="63.0693" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+<filter id="filter2_f_1452_16035" x="150.861" y="19.986" width="128.542" height="63.0693" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
 <feFlood flood-opacity="0" result="BackgroundImageFix"/>
 <feBlend mode="normal" in="SourceGraphic" in2="BackgroundImageFix" result="shape"/>
 <feGaussianBlur stdDeviation="0.175192" result="effect1_foregroundBlur_1452_16035"/>

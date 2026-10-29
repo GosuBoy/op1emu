@@ -9,7 +9,7 @@ from xml.etree import ElementTree as ET
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "gui/op1.svg"
 TARGET = ROOT / "gui/op1-themeable.svg"
-SOURCE_SHA256 = "5552baf07981b6dbf59a9585e9a5b41c6b6f3ad883db0e927b633ce7f379513d"
+SOURCE_SHA256 = "8af5c1c4ec44c7601763c4c4d02f0a558378531dc998cc8428d7081da5407f29"
 
 
 def prepare():
