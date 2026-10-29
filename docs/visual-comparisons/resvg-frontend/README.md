@@ -156,10 +156,12 @@ Observed live results:
 - The host audio device initialized successfully. Audible correctness, latency,
   exhaustive note combinations and physical-device behavior were not measured.
 
-The user explicitly authorized publication of this live firmware-246 Drum preview:
+The user explicitly authorized publication of this updated live firmware-246
+Tape preview, with the calibrated screen placement and bilinear smoothing:
 
-![Work-in-progress SVG panel with the live Drum framebuffer on Retina](live-svg-drum-retina.png)
+![Work-in-progress SVG panel with the smoothed live Tape framebuffer on Retina](live-svg-tape-smoothed-retina.png)
 
-This is a progress preview captured before the screen-inset calibration, not a
-readiness claim. Other live captures remain private. The earlier color-screen
-captures are firmware-free diagnostic images.
+This is a progress preview, not a readiness claim. The PR remains draft and is
+not ready for review or merge. The earlier published Drum image predates the
+screen-inset calibration and smoothing; other live captures remain private.
+The color-screen captures are firmware-free diagnostic images.
