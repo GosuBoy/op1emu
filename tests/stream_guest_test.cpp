@@ -55,12 +55,12 @@ static uint32_t HashWord(uint32_t hash, u32 v) {
 int main(int argc, char** argv) {
     if (argc < 4) return 2;
     const std::string mode = argv[3];
-    if (mode != "normal" && mode != "delay" && mode != "premature" && mode != "pause" && mode != "clock-timeout" && mode != "stop-delay") return 2;
+    if (mode != "normal" && mode != "delay" && mode != "premature" && mode != "pause" && mode != "clock-timeout" && mode != "stop-delay" && mode != "work") return 2;
     bool chain = false;
     uint64_t maxCycles = 200'000'000;
     unsigned rate = 48000, blockCount = 256, mailboxAddress = 0x2000, ledgerAddress = 0x10000;
     unsigned ledgerCapacity = 2048, runLimit = 3'000'000;
-    u32 stackBegin = 0, stackBytes = 0;
+    u32 stackBegin = 0, stackBytes = 0, frameStateAddress = 0;
     std::vector<std::pair<u32, unsigned>> memoryRanges;
     std::vector<std::pair<u32, uint64_t>> pcWatches;
     for (int i = 4; i < argc; ++i) {
@@ -73,6 +73,7 @@ int main(int argc, char** argv) {
         else if (std::string(argv[i]) == "--ledger-capacity" && i + 1 < argc) ledgerCapacity = std::stoul(argv[++i]);
         else if (std::string(argv[i]) == "--max-runs" && i + 1 < argc) runLimit = std::stoul(argv[++i]);
         else if (std::string(argv[i]) == "--watch-pc" && i + 1 < argc) pcWatches.emplace_back(std::stoul(argv[++i], nullptr, 0), 0);
+        else if (std::string(argv[i]) == "--frame-state" && i + 1 < argc) frameStateAddress = std::stoul(argv[++i], nullptr, 0);
         else if (std::string(argv[i]) == "--stack" && i + 2 < argc) {
             stackBegin = std::stoul(argv[++i], nullptr, 0);
             stackBytes = std::stoul(argv[++i]);
@@ -170,11 +171,50 @@ int main(int argc, char** argv) {
     LoadDXE(cpu, loader.getDXEs().front());
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
     unsigned runs = 0;
+    Json frames = Json::array();
+    u32 lastFrame = 0;
+    uint64_t frameIdleCycles = 0;
+    auto observeFrame = [&] {
+        if (!frameStateAddress) return;
+        auto& memory = cpu.GetEmulator();
+        const auto serial = memory.MemoryRead32(frameStateAddress);
+        if (serial == lastFrame) return;
+        if (serial != lastFrame + 1 || frames.size() >= 4096) { ++dropped; lastFrame = serial; return; }
+        lastFrame = serial;
+        const auto tic = memory.MemoryRead32(frameStateAddress + 4);
+        const auto address = memory.MemoryRead32(frameStateAddress + 8);
+        const auto bytes = memory.MemoryRead32(frameStateAddress + 12);
+        const auto width = memory.MemoryRead32(frameStateAddress + 16);
+        const auto height = memory.MemoryRead32(frameStateAddress + 20);
+        if (!width || !height || uint64_t(width) * height * 4 != bytes || bytes > 4 * 1024 * 1024 ||
+            !memory.Maps(address, bytes)) { ++dropped; return; }
+        const uint64_t cycles = memory.MemoryRead32(frameStateAddress + 32) |
+                                (uint64_t(memory.MemoryRead32(frameStateAddress + 36)) << 32);
+        Json record = {{"publication", serial}, {"tic", tic}, {"guest_cycles", cycles},
+                       {"game_tic", memory.MemoryRead32(frameStateAddress + 24)},
+                       {"address", address}, {"width", width}, {"height", height}, {"bytes", bytes}};
+        if (tic == 1 || tic == 35 || tic == 105 || tic == 175 || tic == 350) {
+            std::vector<u8> pixels(bytes);
+            memory.MemoryRead(address, pixels.data(), int(bytes));
+            std::ofstream file(std::string(argv[2]) + ".frame-" + std::to_string(tic) + ".rgba", std::ios::binary);
+            file.write(reinterpret_cast<const char*>(pixels.data()), pixels.size());
+            u32 hash = 2166136261u;
+            for (auto byte : pixels) hash = (hash ^ byte) * 16777619u;
+            record["pixel_fnv1a"] = hash;
+        }
+        frames.push_back(record);
+    };
     while (cpu.PC() != kLdrReturnAddress && !cpu.Failed() && cpu.Time().Cycles() < maxCycles &&
            runs < runLimit && std::chrono::steady_clock::now() < deadline) {
         for (auto& watch : pcWatches) if (cpu.PC() == watch.first) ++watch.second;
         cpu.Run(); ++runs;
+        // The optional publisher yields through guest IDLE. Observe at
+        // those checkpoints, avoiding a RAM poll for every CPU basic block.
+        if (frameStateAddress && cpu.Time().IdleCycles() != frameIdleCycles) {
+            frameIdleCycles = cpu.Time().IdleCycles(); observeFrame();
+        }
     }
+    observeFrame();
     observeBuffers();
     capture.Finish();
     auto& emu = cpu.GetEmulator();
@@ -225,6 +265,11 @@ int main(int argc, char** argv) {
         {"trace_dropped", dropped}, {"trace_limits", {{"blocks", blockCount}, {"guest", ledgerCapacity}, {"codec", 2048},
              {"twi", 2048}, {"clock", 16}, {"prefix_reads", 16}, {"sport_errors", 1024}}},
         {"capture_words", captured}, {"repeated_words", repeated}, {"invalid_words", invalid}, {"errors", errors}};
+    if (cpu.PC() != kLdrReturnAddress || cpu.Failed()) report["execution_bound"] = {{"run_calls", runs}, {"max_runs", runLimit},
+        {"max_cycles", maxCycles}, {"max_wall_seconds", 30},
+        {"cycle_limit_reached", cpu.Time().Cycles() >= maxCycles}, {"run_limit_reached", runs >= runLimit},
+        {"wall_limit_reached", std::chrono::steady_clock::now() >= deadline}};
+    if (frameStateAddress) report["frames"] = frames;
     if (stackBytes) {
         u32 firstWritten = stackBytes;
         for (u32 offset = 0; offset < stackBytes; offset += 4) {

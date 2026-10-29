@@ -74,7 +74,7 @@ def check_capture(prefix, mode, report, symbols, rate=48000):
     if mode not in ("delay", "stop-delay", "clock-timeout"):
         assert len(errors) == 1 and errors[0]["observed_ns"] > rows[-1]["time_ns"], "unexpected steady-state error"
     assert report["trace_dropped"] == 0 and report["mailbox"][51] == 0
-    assert report["mailbox"][40] == (3 if stopped else 1 if mode == "delay" else 2 if mode == "premature" else 0)
+    assert report["mailbox"][40] == (4 if mode == "work" else 3 if stopped else 1 if mode == "delay" else 2 if mode == "premature" else 0)
     # DMA reads and acceptance are checked independently from serialized data.
     for block, record in enumerate(report["blocks"]):
         partial = timeout and block == 32
@@ -93,6 +93,7 @@ def check_capture(prefix, mode, report, symbols, rate=48000):
     owners, generations, refills = [0, 0], [None, None], [0, 0]
     irq_count = 0
     saw_premature = False
+    work_interrupts = 0
     for event in report["guest_events"]:
         kind, block = event[:2]
         slot = block % 2
@@ -109,8 +110,11 @@ def check_capture(prefix, mode, report, symbols, rate=48000):
         elif kind == 4:
             assert block == irq_count and owners[slot] == 3 and generations[slot] == block
             assert event[4] == 0 and event[5] == 0 and event[14] == 0 and event[15] == 1
-            assert event[9] & 0x200 and event[8] == symbols[
-                "delay_idle_resume" if late and block == 9 else "idle_dma_resume"]
+            assert event[9] & 0x200
+            if mode == "work" and symbols["work_wait"] <= event[8] < symbols["work_resume"]:
+                work_interrupts += 1
+            else:
+                assert event[8] == symbols["delay_idle_resume" if late and block == 9 else "idle_dma_resume"]
             assert (event[6] & 0x30) == (0x10 if mode == "delay" and block >= 10 else 0)
             irq_count += 1
         elif kind == 5:
@@ -123,6 +127,8 @@ def check_capture(prefix, mode, report, symbols, rate=48000):
     assert irq_count == (32 if timeout else 10 if stopped else 256)
     assert refills == ([17, 17] if timeout else [5, 5] if stopped else [128, 128])
     assert saw_premature == (mode == "premature")
+    if mode == "work":
+        assert work_interrupts > 0 and report["mailbox"][59] == 0
     if mode in ("pause", "clock-timeout"):
         assert clock[1]["label"] == "stalled-a" and clock[2]["label"] == "stalled-b"
         assert clock[1]["dma"] == clock[2]["dma"] and clock[1]["sport"] == clock[2]["sport"]
@@ -157,8 +163,8 @@ def main():
     for name, digest in manifest["sources"].items():
         assert sha((FIXTURE / name).read_bytes()) == digest, f"rebuild stale source: {name}"
     identities, metrics = {}, {}
-    for mode in ("normal", "delay", "premature", "pause", "clock-timeout") + (("stop-delay",) if rate == 44100 else ()):
-        image_name = mode if mode in ("delay", "premature", "stop-delay") else "normal"
+    for mode in ("normal", "delay", "premature", "pause", "clock-timeout") + (("stop-delay", "work") if rate == 44100 else ()):
+        image_name = mode if mode in ("delay", "premature", "stop-delay", "work") else "normal"
         image_name += suffix
         identity = manifest["images"][image_name]
         image = FIXTURE / (image_name + ".ldr")

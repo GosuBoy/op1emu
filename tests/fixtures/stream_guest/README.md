@@ -11,7 +11,7 @@ GNU Binutils **2.44**, target `bfin-elf`, assembler `-mcpu=bf524`:
 python3 tests/fixtures/stream_guest/build.py --as bfin-elf-as --ld bfin-elf-ld --check
 ```
 
-CI builds stock hash-pinned GNU sources and verifies all seven images, source
+CI builds stock hash-pinned GNU sources and verifies all eight stream images, source
 hashes and exported symbols against `manifest.json`. The linker reserves
 4096 bytes at `ffa00100`; the original checksummed FIRST|FINAL LDR images contain 2308 bytes
 and uses the normal direct DXE loader. `codec.inc` and `codec-macros.inc` are
@@ -77,7 +77,7 @@ end, premature overwrite, timer, drain and stop. Overflow is explicit and fails.
 See [streaming contract, tests and limitations](../../../docs/streaming-audio.md)
 and [validation identities](../../../docs/streaming-validation.md).
 
-The four additional `*-44100.ldr` images use `STREAM_RATE=44100` and a 70 us
+The five additional `*-44100.ldr` images use `STREAM_RATE=44100` and a 70 us
 drain guard. The original three 48 kHz LDR files are unchanged byte for byte.
 `stop-delay-44100` (case 3) uses the same 2 ms delay with guest-visible `UNDR`
 termination instead of continuing with wrong channel alignment. Its safe-stop
@@ -89,3 +89,21 @@ and `STREAM_SAFE_STOP` and replace `fill_words`, retaining the ownership/
 SSYNC/finite-SYNC1 consumer. C integration must also supply linker-owned
 storage, initialize its static state, respect the Blackfin calling convention
 and preserve/reload the ISR mailbox base when C temporarily uses P5.
+
+`work-44100.ldr` (case 4) selects `STREAM_ISR_RESTART`: the acknowledging
+ISR starts only an already READY successor. Main context still releases and
+fills buffers. Real 1.7 ms/0.2 ms instruction work alternates after publication;
+interrupts preempt that work and must preserve its P2 sentinel. Mailbox word59
+records a missing READY successor. Other image bytes remain unchanged. Private
+adapters can select this handoff explicitly, preserving the complete ISR ABI.
+See [gameplay integration](../../../docs/doom-gameplay-scene.md).
+
+The native observer's optional `--frame-state ADDRESS` reads ten u32 words:
+publication, scene tic, framebuffer pointer, byte length, width, height, game
+tic, reserved, cycle low, cycle high. A publisher must SSYNC and yield with
+IDLE so every publication can be observed. The observer permits at most 4096
+consecutive publications and mapped frames up to 4 MiB. It records progress
+and saves raw four-byte pixels at tics 1/35/105/175/350; pixel channel order
+belongs to the publisher (the private engine uses BGRA). Missing publications
+or invalid geometry increment trace drops. This option is read-only and off
+by default. Failed bounded runs also report the limit that was reached.

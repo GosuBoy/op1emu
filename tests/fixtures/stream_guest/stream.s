@@ -5,6 +5,7 @@
 .global idle_dma_resume, delay_idle_resume, idle_drain_resume
 .global codec_setup, codec_configured, codec_failed
 .global produce, fill_words, start_dma, event
+.global work_wait, work_resume
 .ifndef STREAM_CASE
 .set STREAM_CASE, 0
 .endif
@@ -19,6 +20,9 @@
 .endif
 .ifndef STREAM_SAFE_STOP
 .set STREAM_SAFE_STOP, (STREAM_CASE == 3)
+.endif
+.ifndef STREAM_ISR_RESTART
+.set STREAM_ISR_RESTART, (STREAM_CASE == 4)
 .endif
 .macro CHECK_UNDERRUN
     .if STREAM_SAFE_STOP
@@ -193,6 +197,11 @@ completed:
     R1 = STREAM_BLOCKS;
     CC = R0 == R1;
     IF CC JUMP refill;
+    .if STREAM_ISR_RESTART
+    R1 = [P5 + 168];
+    CC = R0 < R1 (IU);
+    IF CC JUMP refill;
+    .endif
     R1 = R0;
     CALL start_dma; /* Publish consumer's next ready slot before producing. */
 refill:
@@ -219,7 +228,41 @@ produce_next:
     R0 = [P5 + 248];
     R0 += 2;
     CALL produce;
+    .if STREAM_CASE == 4
+    /* Alternate1.7ms/0.2ms real CPU work after publication. IRQs can
+     * preempt the long interval; average production remains fast enough. */
+    R0 = [P5 + 248];
+    R1 = 1;
+    R0 = R0 & R1;
+    SET32 R3, 680000
+    CC = R0 == 0;
+    IF CC JUMP 1f;
+    SET32 R3, 80000
+1:
+    SET32 P2, 0x12345678
+    R2 = CYCLES;
+work_wait:
+    .rept 128
+    NOP;
+    .endr
+    R0 = CYCLES;
+    R0 = R0 - R2;
+    CC = R0 < R3 (IU);
+    IF CC JUMP work_wait;
+work_resume:
+    R0 = P2;
+    SET32 R1, 0x12345678
+    CC = R0 == R1;
+    IF CC JUMP 1f;
+    JUMP.L failed;
+1:
+    .endif
     JUMP wait_dma;
+
+.if STREAM_CASE != 4
+work_wait:
+work_resume:
+.endif
 
 /* R1=block -> P2=owner. Two slots, FREE/FILLING/READY/IN_DMA=0/1/2/3. */
 owner_pointer:
@@ -538,6 +581,9 @@ dma_isr:
     [--SP] = R2;
     [--SP] = P0;
     [--SP] = P1;
+    .if STREAM_ISR_RESTART
+    [--SP] = P2;
+    .endif
     R0 = CYCLES;
     [P5 + 32] = R0;
     R0 = RETI;
@@ -558,6 +604,26 @@ dma_isr:
     [P5 + 36] = R0;
     R0 = 4;
     CALL event;
+    .if STREAM_ISR_RESTART
+    /* Only submit an already published slot. The producer never runs here. */
+    R1 = [P5 + 168];
+    R0 = STREAM_BLOCKS;
+    CC = R1 < R0 (IU);
+    IF !CC JUMP irq_no_restart;
+    [--SP] = R1;
+    CALL owner_pointer;
+    R0 = [P2];
+    R1 = [SP++];
+    CC = R0 == 2;
+    IF CC JUMP irq_ready;
+    R0 = 1;
+    [P5 + 236] = R0; /* IRQ acknowledged, but no published successor. */
+    JUMP irq_no_restart;
+irq_ready:
+    CALL start_dma;
+irq_no_restart:
+    P2 = [SP++];
+    .endif
     P1 = [SP++];
     P0 = [SP++];
     R2 = [SP++];

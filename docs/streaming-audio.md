@@ -31,6 +31,8 @@ replaces this producer at an explicitly initialized 44100 output rate. Its
 source, build inputs and captures remain private. The public 44.1 kHz fixtures
 qualify the same consumer without requiring those sources. No 44.1 kHz stream
 is interpreted as 48 kHz.
+The [bounded private gameplay scene](doom-gameplay-scene.md) adds a tested
+optional ISR handoff of already READY buffers during main-context work.
 Descriptor traversal is unnecessary for this selected mode and remains a
 separate qualification task for hardware-intended R4.
 

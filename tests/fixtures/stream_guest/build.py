@@ -63,7 +63,7 @@ def main():
         print(version)
     images = {}
     for name, rate, case in [(n, 48000, i) for i, n in enumerate(("normal", "delay", "premature"))] + [
-            (n + "-44100", 44100, i) for i, n in enumerate(("normal", "delay", "premature", "stop-delay"))]:
+            (n + "-44100", 44100, i) for i, n in enumerate(("normal", "delay", "premature", "stop-delay", "work"))]:
         with tempfile.TemporaryDirectory(prefix="stream-guest-build-") as tmp:
             obj, elf = Path(tmp) / "guest.o", Path(tmp) / "guest.elf"
             subprocess.run([args.assembler, "-mcpu=bf524", "--fatal-warnings", "-I", ROOT,
