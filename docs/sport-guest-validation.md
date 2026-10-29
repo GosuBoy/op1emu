@@ -7,6 +7,9 @@ Date: 2026-10-29. Continuation of transport implementation
 no newer work was replaced. Main, PR branches and both submodule pins remain
 unchanged. The `legacy` audio default remains unchanged.
 
+Guest implementation:
+[`33dc8a77324246cdeee769e074d916df49c66776`](https://github.com/GosuBoy/op1emu/commit/33dc8a77324246cdeee769e074d916df49c66776).
+
 ## Reproduction and fixture identity
 
 Follow the [development build commands](firmware-emulation-development.md), then:
@@ -98,7 +101,8 @@ oracles. Guest JSON deliberately excludes host Run count and wall time.
 ## Validation
 
 Local host: macOS arm64, AppleClang 17.0.0.17000404, LLVM 15, Release,
-SVG on, profiling off.
+SVG on, profiling off. A clean rebuilt `op1emu --build-info` reports host
+`33dc8a773242`, `host_dirty=false`, bcore `f898ced95de7`, `bcore_dirty=false`.
 
 - All **28/28 CTests passed**, 16.79 s, including the new guest integration
   and all prior transport, frontend, provisioning-related loader/NAND, legacy
@@ -112,8 +116,33 @@ SVG on, profiling off.
   and guest mailbox/sample diagnostics. Normal runs are bounded by both
   guest watchdog/guard and outer cycle/Run/wall/process limits.
 
-CI implementation revision, job results and artifact comparisons will be
-recorded after the branch push.
+## CI and independent capture comparison
+
+[Implementation workflow](https://github.com/GosuBoy/op1emu/actions/runs/40829108184)
+at the exact implementation revision: **all six jobs passed**.
+
+| Configuration | Result |
+|---|---|
+| Linux, SVG on, profiling off | **28/28 CTests**, 44.83 s; CLI, native captures and Xvfb OpenGL regressions passed. |
+| Linux, SVG off, profiling on | **31/31 CTests**, 64.79 s; CLI, native captures and Xvfb OpenGL regressions passed. |
+| macOS arm64, SVG on, profiling off | **28/28 CTests**, 42.96 s; CLI and native captures passed. Hosted GL context unavailable (probe 77); equivalent GL checks passed locally and on Linux. |
+| GNU Blackfin fixture rebuild | GNU release archive checksum verified; fresh assembler/linker reproduced all 868 LDR bytes, source hashes and exported symbol addresses. |
+| Python tooling on Linux | **15/15 unittest, 183/183 pytest passed**. |
+| libc++ | TimeSource regression passed. |
+
+Downloaded all three native artifacts and compared **30 PCM/CSV/JSON files
+from each** byte for byte with local macOS: all matched. This includes the
+six guest runs, both CLI clock conditions, output identities and the
+deliberately limited failure dump. Host logs are retained for diagnostics and
+excluded from the byte comparison because they contain wall times/paths.
+
+- [Linux profiling-off evidence](https://github.com/GosuBoy/op1emu/actions/runs/40829108184/artifacts/12877748446)
+- [Linux profiling-on evidence](https://github.com/GosuBoy/op1emu/actions/runs/40829108184/artifacts/12877833384)
+- [macOS evidence](https://github.com/GosuBoy/op1emu/actions/runs/40829108184/artifacts/12878271353)
+
+The existing host-driven transport demonstrations remain in those artifacts
+beside `sport-guest/`. The source rebuild job uses public GNU inputs only;
+none of the CI jobs accesses the recovered private integration materials.
 
 ## Private integration inputs and remaining gaps
 
