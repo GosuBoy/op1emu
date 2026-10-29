@@ -77,9 +77,10 @@ backpressure, status/interrupts, and native PCM plus timestamped capture.
 
 See [the behavioral contract and reproducible headless demonstrations](sport-transmit.md)
 for sources, model assumptions, supported registers, exact stimulus/output
-identities and the remaining hardware-validation gaps. The transport and two
-capture demonstrations are registered with CTest alongside the existing
-integration regressions. CI uploads firmware-free capture evidence on all
+identities and the remaining hardware-validation gaps. See the
+[validation record](sport-transmit-validation.md) for revision and test results.
+The transport and two capture demonstrations are registered with CTest alongside
+the existing integration regressions. CI uploads firmware-free capture evidence on all
 three native build configurations.
 
 The available custom-firmware sources establish SPORT0/DMA4 selection, but a
