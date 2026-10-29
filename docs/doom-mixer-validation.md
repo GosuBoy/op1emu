@@ -61,7 +61,7 @@ are newly rebuilt standalone images, not old V74/R4 executables.
 
 Every complete run spans exactly 141312/44100 = **3.204353741… seconds** of
 sample data. The audible schedule reaches frame 125003, after 2.8 seconds.
-Each slot has 1104 productions /1103 reuses. All fresh channel slots match;
+Each slot has 1104 productions / 1103 reuses. All fresh channel slots match;
 there is no steady-state underrun or replay. Every value equals both an
 independent mathematical oracle and a separately executed reference compiled
 from the exact recovered mixer/decoder. The reference's 64- and 512-frame calls
@@ -103,3 +103,34 @@ repository. [Reproduction and limits](doom-mixer-integration.md) describe the
 separate private runner, compiler recipe, clock assumptions and remaining
 full-game dependencies. Codec mute/output state remains separate from native
 SPORT capture; no physical compatibility or analog-output result is claimed.
+
+## Branch CI and cross-platform artifacts
+
+Implementation [a26e89360c40f61b7326b3e76bfa2e8afc97d86a](https://github.com/GosuBoy/op1emu/commit/a26e89360c40f61b7326b3e76bfa2e8afc97d86a)
+passed [CI run 40879883311](https://github.com/GosuBoy/op1emu/actions/runs/40879883311):
+
+- Linux profiling OFF: 36 native tests; profiling ON: 39 native tests.
+- macOS 15 profiling OFF: 36 native tests.
+- Stock GNU Binutils 2.44 rebuild: all nine public images, source hashes/symbols.
+- Python tooling: 15 provisioning unit tests and 183 tool tests.
+- libc++ TimeSource contract passes. Existing frontend/legacy coverage remains.
+
+All 133 streaming data/identity/metric files (excluding console logs) from
+both rates are byte-identical between local Apple silicon, Linux OFF/ON
+and macOS CI artifacts. All 104 existing PCM/CSV files also match local and
+the preceding 40872373956 CI artifact byte for byte. Private mixer sources,
+build inputs and captures are absent from all public artifacts.
+
+Downloaded artifact archive SHA256 identities:
+
+| Artifact | ID | SHA256 |
+|---|---:|---|
+| Linux OFF |12899149357|`bed866fa2326d5dd4288905147756215bd78966ab0437237b2ad631977d51d01`|
+| Linux ON |12899976882|`487e7c3b0c315f630019696980b7cd6525f5460c33816cf2671614dc6a9870bc`|
+| macOS OFF |12899179909|`f35a79a04419414fd6b475c91acdf8258dae43646834baad378afc8f7a3b47ea`|
+
+The private compatible compiler was independently rebuilt in a clean directory
+from the same GNU sources. All three private target image bytes/symbols were
+identical, and the entire private matrix passed with that clean compiler.
+The exact final compiler binaries, source pins, generated inputs, complete
+local runner and build/event/output identities are retained privately.
