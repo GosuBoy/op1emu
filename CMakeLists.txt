@@ -219,6 +219,8 @@ target_include_directories(op1emu PRIVATE ${stb_SOURCE_DIR} ${miniaudio_SOURCE_D
 option(OP1_BUILD_HEADLESS_TESTS "Build headless frontend regressions" OFF)
 if(OP1_BUILD_HEADLESS_TESTS)
     enable_testing()
+    add_executable(op1-sport-guest-test tests/sport_guest_test.cpp)
+    target_link_libraries(op1-sport-guest-test PRIVATE emulator bfin-core nlohmann_json::nlohmann_json Threads::Threads)
     add_executable(op1-sport-transport-test tests/sport_transport_test.cpp)
     target_link_libraries(op1-sport-transport-test PRIVATE emulator)
     add_test(NAME op1-sport-transport-test COMMAND op1-sport-transport-test)
@@ -299,6 +301,10 @@ if(OP1_BUILD_HEADLESS_TESTS)
 
     find_package(Python3 COMPONENTS Interpreter)
     if(Python3_Interpreter_FOUND)
+        add_test(NAME op1-sport-guest
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sport_guest_integration.py
+                    $<TARGET_FILE:op1-sport-guest-test> ${CMAKE_CURRENT_BINARY_DIR}/sport-guest $<TARGET_FILE:op1emu>)
+        set_tests_properties(op1-sport-guest PROPERTIES TIMEOUT 180 RESOURCE_LOCK usbip-port)
         add_test(NAME op1-ldr-smoke
             COMMAND ${Python3_EXECUTABLE} tests/ldr_smoke.py $<TARGET_FILE:op1emu> $<TARGET_FILE:ldrdump>
             WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")

@@ -1,0 +1,20 @@
+{
+  "image_bytes": 868,
+  "image_sha256": "0aca5665cdf84c6bcdffb972d568b868d5706cada7d9ead8289576e422ed9e60",
+  "schema": 1,
+  "sources": {
+    "build.py": "f4f12a2ca1778c6fbb39b6c51d47acb2c30a8fea0638d931fdf3217f764684a4",
+    "diagnostic.s": "92b92913341b2f50eb7d0bdbc4086b36d1003a12314816e72f115edadfd4f964",
+    "link.ld": "5540645a9a878eadc3f498ad89adfd3fd173ddf29740fc67717f5fe719dc8c60"
+  },
+  "symbols": {
+    "_start": 4288676096,
+    "dma_isr": 4288676712,
+    "exception_isr": 4288676908,
+    "idle_dma_resume": 4288676500,
+    "idle_drain_resume": 4288676560,
+    "supervisor": 4288676200,
+    "timer_isr": 4288676844
+  },
+  "toolchain": "GNU Binutils 2.44, bfin-elf; assembler -mcpu=bf524; no C compiler/runtime"
+}

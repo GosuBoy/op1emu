@@ -1,4 +1,4 @@
-# SPORT transmit transport, milestone 1
+# SPORT transmit transport
 
 `--sport-tx-mode transport` enables a bounded digital TX model. PIO and DMA
 enter the same FIFO; only completed serial words reach native capture. The
@@ -143,6 +143,27 @@ polling and the actual CPU SIC17 binding. Existing legacy audio regressions
 remain active. CI uploads the synthetic running/clockless evidence from Linux
 (profiling on/off) and macOS.
 
+## Guest-executed diagnostic, milestone 2
+
+The [public Blackfin fixture](../tests/fixtures/sport_guest/README.md) now
+exercises the normal loader and actual CPU instructions through SPORT0/DMA4,
+IDLE, SIC17→IVG9 delivery, guest W1C acknowledgment, RTI and native capture.
+It uses the same sixteen sample values and an explicitly synthetic 1 MHz/
+64-clock stereo stimulus. Without that stimulus the same image stalls at
+four FIFO words and exits through its guest core-timer watchdog with no PCM.
+
+```sh
+ctest --test-dir build -R '^op1-sport-guest$' --output-on-failure
+```
+
+The runner never drives progress by polling MMIO or manually advancing time.
+Both repeated runs and different CPU chaining policies must match exactly;
+the normal positional LDR CLI must produce identical native PCM and CSV.
+The [guest validation record](sport-guest-validation.md) separates DMA
+acceptance, interrupt execution and final serialization and records output
+hashes, bounded failure diagnostics and remaining gaps. The original
+host-driven transport regressions remain active alongside this test.
+
 ## Firmware run and next milestone
 
 For a separately supplied image, transport mode is selectable without
@@ -159,11 +180,12 @@ clock experiment, add `--sport-tx-clock 2822400 --sport-tx-frame-clocks 64`
 verified physical board rate. Legacy mode retains the former DMA audio
 callback/host playback path and is not evidence of hardware-intended startup.
 
-Available OP-Doom sources were inspected, but the precise executable images,
-stock initialization context, pinned compiler/loader and privately archived
-build inputs were unavailable locally. Hardware-intended OP-Doom startup was
-therefore **not executed**, and neither codec setup nor physical OP-1 behavior
-is validated. The next concrete milestone is to restore that pinned fixture
-privately, establish the codec identity and clock/pin route from board evidence,
-then run unchanged initialization with a documented digital codec/control
-model and compare its first clock/FS/DMA observations with hardware.
+The private R4 finite-audio diagnostic image, its reference ELF/bootstrap,
+matching source revision and boot inputs have since been recovered and hashed
+outside the public repository. Exact pinned Linux compiler binaries and the
+complete updater patch/build workspace remain missing; R4 is a finite tone
+diagnostic, while the recovered V74 gameplay baseline has audio disabled.
+Hardware-intended startup remains **not executed**. The next milestone is to
+establish codec identity and the clock/pin route from board evidence, connect
+that state to the transport, then run unchanged initialization without forced
+CLI clocks and compare its first clock/FS/DMA observations with hardware.

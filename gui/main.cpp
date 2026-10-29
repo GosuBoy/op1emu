@@ -1,4 +1,5 @@
 #include "loader/ldr.h"
+#include "loader/load_dxe.h"
 #include "cpu/cpu.h"
 #include "cpu/twi.h"
 #include "peripheral/MT29F4G08.h"
@@ -40,26 +41,14 @@ static void StopSigHandler(int) {
 void LdrExecutionThread(BlackFinCpu& cpu, const LDRParser& parser) {
     const auto& dxes = parser.getDXEs();
     for (const auto& dxe : dxes) {
-        for (const auto& block : dxe.blocks) {
-            if (!block.data.empty()) {
-                cpu.GetEmulator().MemoryWrite(
-                    block.header.target_address,
-                    block.data.data(),
-                    block.data.size()
-                );
-            }
-            if (block.IsFirstBlock()) {
-                cpu.SetRegister(RegIndex::RETS, 0x8000000);
-                cpu.SetPC(block.header.target_address);
-            }
-        }
+        LoadDXE(cpu, dxe);
         LogInfo("Start executing DXE");
 
         while (!cpuShouldStop.load()) {
             cpu.Run();
             if (cpu.Failed()) cpuShouldStop.store(true);
 
-            if (cpu.PC() == 0x8000000) {
+            if (cpu.PC() == kLdrReturnAddress) {
                 LogInfo("Finished executing DXE");
                 break;
             }

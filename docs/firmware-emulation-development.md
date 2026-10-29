@@ -83,16 +83,28 @@ The transport and two capture demonstrations are registered with CTest alongside
 the existing integration regressions. CI uploads firmware-free capture evidence on all
 three native build configurations.
 
-The available custom-firmware sources establish SPORT0/DMA4 selection, but a
-hardware-intended OP-Doom image could not be executed without its separately
-preserved private build/boot inputs. Codec identity/clock routing and physical
-output remain unverified. No proprietary inputs are added to this repository.
+The next milestone adds a [guest-executed audio diagnostic](../tests/fixtures/sport_guest/README.md)
+with assembly source, linker script, pinned tool identity, image/source hashes
+and a reproducible LDR build. Guest instructions populate samples, configure
+SPORT0/DMA4 and SIC/CEC, execute IDLE, acknowledge DMA_DONE in an IVG9 ISR,
+return with RTI, and publish completion. The same image runs with an explicit
+synthetic clock and without a clock. CTest compares repeated PCM/event records,
+CPU chaining policies and normal CLI captures; CI independently rebuilds it
+from pinned GNU Binutils sources. See [guest validation](sport-guest-validation.md).
+
+Private R4 finite-audio diagnostic executables, source context and boot inputs
+have now been recovered and hashed outside this repository. The exact pinned
+Linux compiler executables and complete updater patch/build workspace remain
+missing. No audible OP-Doom gameplay image has been identified. Private startup
+has not been run; codec identity/clock routing and physical output remain
+unverified. No proprietary inputs are added to this repository.
 
 ## Next development milestones
 
-1. Restore the pinned OP-Doom fixture privately with exact image/boot/compiler
-   provenance; establish codec identity and board clock routing; run unchanged
-   initialization and compare clock/FS/DMA observations with hardware.
+1. Connect evidenced codec state and board clock routing to the transport;
+   then run the recovered hardware-intended initialization without forcing
+   clocks through the CLI and compare clock/FS/DMA observations with hardware.
+   Resolve the remaining private build dependencies for an exact rebuild.
 2. Qualify DMA prefetch/SYNC completion, descriptor timing and codec controls
    needed by that fixture; extend the bounded transport only where evidenced.
 3. Extend deterministic controls and native capture for gameplay, display,

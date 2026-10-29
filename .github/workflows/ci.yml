@@ -16,6 +16,25 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  blackfin-fixture:
+    # Rebuild the public guest with stock GNU sources, independently of the
+    # committed image used by every native test configuration below.
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y build-essential bison flex zlib1g-dev
+      - name: Build pinned Blackfin assembler and linker
+        run: |
+          curl --fail --location --retry 3 -o /tmp/binutils-2.44.tar.xz https://ftp.gnu.org/gnu/binutils/binutils-2.44.tar.xz
+          echo 'ce2017e059d63e67ddb9240e9d4ec49c2893605035cd60e92ad53177f4377237  /tmp/binutils-2.44.tar.xz' | sha256sum -c -
+          tar -xf /tmp/binutils-2.44.tar.xz -C /tmp
+          mkdir /tmp/binutils-build
+          cd /tmp/binutils-build
+          /tmp/binutils-2.44/configure --target=bfin-elf --disable-nls --disable-werror --disable-gprofng --disable-gold --with-system-zlib
+          make -j2 MAKEINFO=true all-gas all-ld
+      - name: Rebuild guest and verify image, sources and symbols
+        run: python3 tests/fixtures/sport_guest/build.py --as /tmp/binutils-build/gas/as-new --ld /tmp/binutils-build/ld/ld-new --check
+
   python:
     runs-on: ubuntu-22.04
     steps:
@@ -169,11 +188,13 @@ jobs:
           ./build/op1-sport-transport-test --demo build/sport-clockless --no-clock > build/sport-clockless.log
 
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: sport-transport-${{ matrix.os }}-profiling-${{ matrix.profiling }}
           path: |
             build/sport-running.*
             build/sport-clockless.*
+            build/sport-guest/
 
       - name: OpenGL shell regression (Linux)
         if: runner.os == 'Linux'

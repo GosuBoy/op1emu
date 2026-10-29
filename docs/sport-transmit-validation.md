@@ -1,5 +1,10 @@
 # SPORT transport validation record
 
+This records the first, host-driven MMIO milestone. The subsequent
+[guest-executed milestone](sport-guest-validation.md) adds CPU/IDLE/ISR evidence
+and updates the status of private integration inputs; the results below
+remain tied to the original revision.
+
 Validation date: 2026-10-29. Implementation:
 [`ef6d3056c3fe440a2a50ac64164f62ea6d934270`](https://github.com/GosuBoy/op1emu/commit/ef6d3056c3fe440a2a50ac64164f62ea6d934270),
 based on integration checkpoint `a2c9bfd098e3937ce0c6742aa526fb77b198898f`.
