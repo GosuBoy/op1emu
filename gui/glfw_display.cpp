@@ -184,6 +184,11 @@ void GLFWDisplay::DrawScreen() {
     if (texture_) {
         glEnable(GL_TEXTURE_2D);
         glBindTexture(GL_TEXTURE_2D, texture_);
+        const GLint filter = uiConfig_.screenFilter == UIScreenFilter::Linear ? GL_LINEAR : GL_NEAREST;
+        // Apply at draw time: a panel switch must work even without a new
+        // firmware frame. PNG/custom layouts keep nearest unless opted in.
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, filter);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, filter);
     } else {
         glDisable(GL_TEXTURE_2D);
         glColor4f(0, 0, 0, 1);
@@ -228,8 +233,6 @@ void GLFWDisplay::RenderFramebuffer(bool present) {
             if (!texture_)
                 glGenTextures(1, &texture_);
             glBindTexture(GL_TEXTURE_2D, texture_);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
             if (textureWidth_ != width_ || textureHeight_ != height_) {

@@ -66,6 +66,19 @@ class UIPreview {
             ++index;
         }
     }
+    static std::array<uint8_t, 3> ScreenCenter(GLFWDisplay &d) {
+        int lw, lh, w, h;
+        glfwGetWindowSize(d.window_, &lw, &lh);
+        auto pixels = Read(d, w, h);
+        auto fit = UIFit::Into(d.artWidth_, d.artHeight_, lw, lh);
+        auto m = UIScreenMatrix(d.uiConfig_.screen);
+        const double q = (m[3] + m[7]) * .5 + 1;
+        const int x = int((fit.x + fit.scale * ((m[0] + m[4]) * .5 + m[12]) / q) * w / lw);
+        const int y = int((fit.y + fit.scale * ((m[1] + m[5]) * .5 + m[13]) / q) * h / lh);
+        Require(x >= 0 && x < w && y >= 0 && y < h, "screen center lies inside drawable");
+        auto p = pixels.data() + (size_t(y) * w + x) * 4;
+        return {p[0], p[1], p[2]};
+    }
     static int Run(int argc, char **argv) {
         bool test = argc == 2 && std::string(argv[1]) == "--test";
         std::string path = test ? (SvgBackgroundRenderer::Available() ? "gui/ui-svg.json" : "gui/ui.json")
@@ -97,6 +110,24 @@ class UIPreview {
                         dst == GL_ONE,
                     "GL blend/unpack state restoration");
             Check(d);
+            // A magnified 2x2 RGB565 frame has a gray center with bilinear
+            // sampling and a pure source color with nearest. Switch without
+            // another frame upload to exercise draw-time filter selection.
+            const auto defaultFilter = d.uiConfig_.screenFilter;
+            Feed(d, 2, 2);
+            d.uiConfig_.screenFilter = UIScreenFilter::Linear;
+            draw();
+            for (auto c : ScreenCenter(d))
+                Require(std::abs(int(c) - 128) <= 12, "linear sampling interpolates screen pixels");
+            const auto screenTexture = d.texture_;
+            d.uiConfig_.screenFilter = UIScreenFilter::Nearest;
+            draw();
+            for (auto c : ScreenCenter(d))
+                Require(c == 0 || c == 255, "nearest sampling preserves source colors");
+            Require(d.texture_ == screenTexture, "filter change reuses display texture");
+            d.uiConfig_.screenFilter = defaultFilter;
+            Feed(d, 201, 400);
+            draw();
             const auto texture = d.backgroundTexture_;
             glfwSetWindowSize(d.window_, 802, 500);
             glfwPollEvents();
@@ -157,7 +188,7 @@ class UIPreview {
             Require(!d.hasCursorPosition_, "focus loss invalidates stale cursor position");
             d.SetKeyEventCallback({});
             std::cout
-                << "GL RGB565, orientation, projective overlay, state, resize and texture reuse passed\n";
+                << "GL RGB565, filtering, orientation, projective overlay, state, resize and texture reuse passed\n";
         } else if (argc > 2) {
             int w, h;
             auto pixels = Read(d, w, h);

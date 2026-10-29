@@ -27,6 +27,16 @@ marked target; no source pixels are cropped or stretched. This is a visual
 calibration, not a physical display measurement. Screen quads also support
 perspective transforms (covered by the GL harness).
 
+The SVG layout selects `display.filter: "linear"` to smooth the live firmware
+pixels during scaling. `"nearest"` remains selectable and is the default when
+the field is omitted, including the PNG fallback. This affects texture sampling
+only; framebuffer dimensions, RGB565 data, rotation, screen quad and input
+coordinates are unchanged. The GL regression magnifies a 2x2 diagnostic frame,
+checks the interpolated center, then switches to nearest without a new frame
+upload and verifies the original colors and display-texture reuse.
+Local validation passed all 22 CTests in the SVG build and the OpenGL harness
+in both SVG-enabled and PNG-only builds, including the filter-switch checks.
+
 ## Reference comparisons
 
 Inkscape 1x / resvg 0.49.0 1x:

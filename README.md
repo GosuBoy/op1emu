@@ -233,6 +233,12 @@ from the firmware's portrait RGB565 PPI/DMA framebuffer, rotated clockwise and
 mapped onto the configured screen quad. Without a frame, the screen is black.
 No firmware, NAND or OTP data is included.
 
+The SVG layout uses bilinear smoothing for the low-resolution firmware screen,
+reducing hard pixel steps when enlarged on Retina displays. Set `display.filter`
+to `"nearest"` in the UI JSON for sharp source pixels, or `"linear"` for smoothing.
+Omitting it preserves nearest-neighbor scaling, including the original PNG layout.
+Smoothing interpolates existing pixels; it does not add detail to firmware graphics.
+
 Artwork is rasterized into premultiplied RGBA at physical framebuffer resolution,
 with a 120 ms quiet period after size changes. Window and mouse coordinates
 remain logical pixels, with aspect-preserving letterboxing. Raster dimensions

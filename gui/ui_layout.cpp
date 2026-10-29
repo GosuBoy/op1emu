@@ -82,6 +82,11 @@ UILayout UILayout::Load(const std::string &path) {
     if (l.scale <= 0 || l.scale > 8)
         throw std::runtime_error("UI scale must be in (0,8]");
     auto &d = j.at("display");
+    const auto filter = d.value("filter", std::string("nearest"));
+    if (filter == "linear")
+        l.screenFilter = UIScreenFilter::Linear;
+    else if (filter != "nearest")
+        throw std::runtime_error("display.filter must be nearest or linear");
     if (d.contains("quad")) {
         auto r = Region(d.at("quad"));
         if (r.polygon.size() != 4)

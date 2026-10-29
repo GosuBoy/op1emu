@@ -2,6 +2,7 @@
     "background": "op1.svg",
     "scale": 1.0,
     "display": {
+        "filter": "linear",
         "quad": [
             [
                 295.5,

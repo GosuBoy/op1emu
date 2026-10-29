@@ -29,11 +29,13 @@ struct UIKey {
     std::string name;
     UIGpio gpio;
 };
+enum class UIScreenFilter { Nearest, Linear };
 struct UILayout {
     std::string background;
     double scale = 1;
     bool svg = false;
     std::array<UIPoint, 4> screen; // TL, TR, BR, BL, in intrinsic viewport pixels
+    UIScreenFilter screenFilter = UIScreenFilter::Nearest;
     std::vector<UIButton> buttons;
     std::vector<UIEncoder> encoders;
     std::vector<UIKey> keys;
