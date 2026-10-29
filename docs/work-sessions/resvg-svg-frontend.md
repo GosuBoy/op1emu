@@ -1,15 +1,18 @@
 # Work session: resvg-backed SVG front panel for op1emu
 
-**Status: work in progress — not ready for review or merge.**
-Implemented and boot-tested with local firmware 246; broader musical/audio
-acceptance, compatibility validation and implementation review remain outstanding.
-The user supplied `op1.svg` as replacement artwork, authorized its public
-redistribution, and explicitly approved the isolated firmware test. See
+**Status: user-approved for upstream review on 2026-10-29.**
+The user approved integrating the six themes, upper-right dropdown and latest
+`op-skew.svg` artwork into [upstream PR #77](https://github.com/op1emu/op1emu/pull/77)
+and marking it ready for review. The SVG's redistribution and isolated firmware-246
+testing were explicitly authorized. Broader firmware and desktop compatibility
+remain review/validation limits; no merge was authorized. See
 [verification and visual comparisons](../visual-comparisons/resvg-frontend/README.md)
 and the README's SVG build/run instructions. The specification below is retained
-as the original acceptance record. The PR remains draft for user review and
-broader musical/audio acceptance.
-Use branch `feature/resvg-svg-ui` in `GosuBoy/op1emu`; do not work on `main` or modify unrelated open PRs. Replace this checklist with implementation commits on the same branch, retaining a clear reviewable history. The draft PR may be marked ready for review only after the acceptance criteria below pass.
+as the original implementation record; subsequent explicit user approvals supersede
+its original draft/publication restrictions. Implementation continues on
+`feature/resvg-svg-ui` in `GosuBoy/op1emu`; do not modify `main` or merge the PR.
+
+## Original implementation specification
 
 ## Goal
 
@@ -107,4 +110,6 @@ Document any new CMake flags and how to select SVG/PNG, and ensure CI covers the
 - Firmware-free tests, updated CI, README/usage notes, and captured visual comparisons.
 - CI passing on Linux and macOS, original PNG and headless regressions preserved.
 
-Keep implementation commits on this PR branch. Note the exact commands and results in the PR, plus any known visual fidelity limits. **Do not merge, publish an upstream implementation PR, or mark ready for review before the work has been validated.**
+Keep implementation commits on the PR branch and record validation and known
+limits in the PR. The upstream submission and ready-for-review transition were
+subsequently authorized by the user; merging still requires separate authorization.

@@ -1,8 +1,11 @@
-# SVG palette experiment
+# SVG themes
 
-This study lives on `experiment/svg-themes`, based on draft PR #77's `5b51152`.
-The theme changes have not been added to that PR. Palettes were sampled from the
-user's six-panel reference; the original silver is an exact rendering baseline.
+The six-theme implementation is included in [upstream PR #77](https://github.com/op1emu/op1emu/pull/77).
+It was developed on `experiment/svg-themes`, which remains a rollback checkpoint.
+Palettes were sampled from the user's six-panel reference; Silver is an exact
+rendering baseline for the supplied SVG.
+
+![Six SVG palettes](../../docs/visual-comparisons/resvg-frontend/six-svg-themes.png)
 
 | Theme | Surface color |
 | --- | --- |

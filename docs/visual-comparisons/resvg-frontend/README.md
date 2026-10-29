@@ -1,8 +1,17 @@
 # SVG frontend verification, 2026-10-28
 
-> **Work in progress — not ready for review or merge.** The implementation and
-> representative smoke tests are complete, but broader musical/audio acceptance,
-> compatibility validation and implementation review remain outstanding.
+The user approved the current implementation for upstream review on 2026-10-29.
+The latest preview includes the supplied `op-skew.svg`, six live palettes and the
+dropdown beside the upper-right body corner. Review and broader firmware/desktop
+compatibility validation remain outstanding; no merge is authorized.
+
+![Floating SVG window with live Tape display and theme dropdown on Retina](live-svg-dropdown-retina.png)
+
+![Six SVG themes rendered by resvg](six-svg-themes.png)
+
+The palette sheet uses blank screens. The live screenshot is firmware 246 at
+normal playback speed; no firmware, NAND, OTP or private inputs are included.
+See [theme usage and validation](../../../gui/themes/README.md).
 
 These measurements and images record the original frontend verification.
 The later theme experiment uses the improved `op-skew.svg`; see the
@@ -128,7 +137,7 @@ could not create a GLFW OpenGL window; CI now probes this capability and
 explicitly reports the GL runtime check as unavailable in that environment.
 Actual macOS GL assertions and the Retina captures passed on the local arm64
 desktop. No renderer assertion failure is converted into a context skip.
-The PR remains draft for user review and broader musical/audio acceptance.
+The current implementation was subsequently approved by the user for upstream review.
 
 
 ## Live firmware follow-up
@@ -175,9 +184,10 @@ Observed live results:
 The user explicitly authorized publication of this updated live firmware-246
 Tape preview in the floating window, with calibrated placement and bilinear smoothing:
 
-![Work-in-progress floating SVG window with the live Tape framebuffer on Retina](live-svg-floating-retina.png)
+![Earlier floating SVG window with the live Tape framebuffer on Retina](live-svg-floating-retina.png)
 
-This is a progress preview, not a readiness claim. The PR remains draft and is
-not ready for review or merge. Earlier published Drum and framed Tape images
-predate the floating window; other live captures remain private.
+This earlier preview predates the improved artwork and theme dropdown shown at
+the top. The user has now approved the current implementation for upstream review.
+Earlier published Drum and framed Tape images predate the floating window;
+other live captures remain private.
 The color-screen captures are firmware-free diagnostic images.
