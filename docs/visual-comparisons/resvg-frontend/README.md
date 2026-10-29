@@ -1,5 +1,9 @@
 # SVG frontend verification, 2026-10-28
 
+> **Work in progress — not ready for review or merge.** The implementation and
+> representative smoke tests are complete, but broader musical/audio acceptance,
+> compatibility validation and implementation review remain outstanding.
+
 Source: the user's replacement `/Users/javi/Downloads/op1.svg`, explicitly
 approved for public redistribution. The earlier handoff's `op-skew(1).svg` was
 superseded. `gui/op1.svg` SHA-256:
@@ -134,7 +138,9 @@ Observed live results:
 - The host audio device initialized successfully. Audible correctness, latency,
   exhaustive note combinations and physical-device behavior were not measured.
 
-Live firmware captures were retained privately for the user. They show Synth,
-Tape playback, Drum, and a blue-encoder parameter change. They are not included
-in this public repository. The earlier committed color-screen captures remain
-firmware-free diagnostic images.
+The user explicitly authorized publication of this live firmware-246 Drum preview:
+
+![Work-in-progress SVG panel with the live Drum framebuffer on Retina](live-svg-drum-retina.png)
+
+This is a progress preview, not a readiness claim. Other live captures remain
+private. The earlier color-screen captures are firmware-free diagnostic images.

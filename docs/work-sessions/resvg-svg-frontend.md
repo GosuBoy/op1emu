@@ -1,6 +1,8 @@
 # Work session: resvg-backed SVG front panel for op1emu
 
-**Status: implemented and boot-tested with local firmware 246.**
+**Status: work in progress — not ready for review or merge.**
+Implemented and boot-tested with local firmware 246; broader musical/audio
+acceptance, compatibility validation and implementation review remain outstanding.
 The user supplied `op1.svg` as replacement artwork, authorized its public
 redistribution, and explicitly approved the isolated firmware test. See
 [verification and visual comparisons](../visual-comparisons/resvg-frontend/README.md)
