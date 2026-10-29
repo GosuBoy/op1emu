@@ -77,12 +77,58 @@ complete proof of the firmware's partition-map internals. You can specify
 `--start-block N` for independent experiments. Other firmware revisions and
 hardware configurations have not been verified.
 
+### Optional OTP-based LDR preparation (stacked draft)
+
+If you want an executable decrypted LDR as well as the NAND content image,
+supply an OTP **locally**:
+
+```sh
+python3 tools/provision_nand.py \
+  --firmware /path/to/op1_246.op1 \
+  --otp /path/to/TE-OP-1-BF524-OTP-dump.txt \
+  --ldr-output plaintext.ldr \
+  --output nand-246.bin \
+  --mkyaffs2 ./yaffs2utils/mkyaffs2
+```
+
+Alternatively, **explicitly opt in** to an HTTPS download:
+
+```sh
+python3 tools/provision_nand.py \
+  --firmware /path/to/op1_246.op1 \
+  --fetch-otp \
+  --ldr-output plaintext.ldr \
+  --output nand-246.bin \
+  --mkyaffs2 ./yaffs2utils/mkyaffs2
+```
+
+`--otp` and `--fetch-otp` are mutually exclusive and require
+`--firmware` and `--ldr-output`. Supported local inputs are the textual
+OTP page dump, a 16-byte raw 0xd0 page, and op1emu's 8192-byte `otp.bin`.
+
+The opt-in downloader fetches only
+[`Tolsi/op1dumps`](https://github.com/Tolsi/op1dumps)'s public text dump
+at an **immutable pinned Git commit**, checking the downloaded data against
+its pinned Git blob SHA-1. It uses the key locally in memory and does **not**
+save an OTP copy, download automatically, put OTP data in Git, or send key
+data to a service. Neither key nor firmware contents are printed. No network
+request is made unless `--fetch-otp` is provided.
+
+**Scope and caution:** The integrated decryption code implements the
+documented XTEA transformation for encrypted OP-1 LDR callback blocks.
+Its offline tests use synthetic firmware only; a full `op1_246.op1`
+end-to-end comparison with a known-good decrypted LDR is **still required**.
+The fixed public dump might not match every firmware or device.
+This mode produces a plaintext LDR for op1emu direct-LDR loading, **not**
+a boot-ROM-installable encrypted NAND. Downloading from a third-party public
+repository is not the same as distributing the key ourselves, but the maintainer
+must approve the explicit-fetch policy before upstream acceptance.
+
 ### Running
 
-The NAND image contains the factory assets **only**. `OP1_vdk.ldr` from the
-official package contains encrypted blocks. Direct LDR boot must use a
-compatible, legitimately obtained decrypted LDR, or normal boot must use the
-proper OTP/firmware arrangement.
+The NAND image contains the factory assets **only**. If OTP decryption was
+selected, the utility additionally writes a locally decrypted `plaintext.ldr`.
+Otherwise you still need a compatible decrypted LDR or normal boot setup.
 
 ```sh
 ./build/op1emu nand-246.bin /path/to/plaintext.ldr --nand-snapshot
@@ -97,12 +143,13 @@ archives in a pull request. These are user-provided inputs, never bundled.
 ## Tests and validation
 
 ```sh
-python3 -m unittest discover -s tools -p 'test_provision_nand.py' -v
+python3 -m unittest discover -s tools -p 'test_*.py' -v
 ```
 
 The included unit tests use only synthetic page data and a synthetic
-CRC32/LZMA/TAR package. They cover the split-OOB layout, unsafe overwrite
-prevention, cleanup after invalid OOB, package extraction, and CRC rejection.
+CRC32/LZMA/TAR package. They cover the split-OOB layout, overwrite protection, cleanup, package
+extraction, CRC rejection, OTP formats, mock offline fetching, download integrity,
+and synthetic LDR decryption.
 
 ### Status / known gaps
 
