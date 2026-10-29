@@ -130,11 +130,39 @@ or rerun under another admission/profile assumption.
 
 ## CI
 
-The implementation CI result and downloaded cross-platform evidence are
-recorded after the branch run completes. Existing Python, provisioning,
-libc++, frontend, legacy and public guest coverage remain enabled. CI also
-rebuilds every committed synthetic guest image from pinned GNU sources.
-Only public synthetic capture artifacts are uploaded.
+Implementation:
+[`29ba89adfaedfe91ad3315e0b581ddbbd0a43acf`](https://github.com/GosuBoy/op1emu/commit/29ba89adfaedfe91ad3315e0b581ddbbd0a43acf).
+[CI run 40872373956](https://github.com/GosuBoy/op1emu/actions/runs/40872373956)
+completed successfully on 2026-10-29. All six jobs passed:
+
+- Linux without profiling: 35 CTests, frontend/OpenGL and CLI checks.
+- Linux with profiling: 38 CTests, frontend/OpenGL and CLI checks.
+- Apple silicon macOS15: 35 CTests, frontend and CLI checks.
+- Stock GNU Binutils2.44 rebuild: both corrected finite images and all three
+  streaming images, complete source hashes and symbol manifests match.
+- Python tooling: 15 unit tests and 183 pytest tests.
+- libc++ TimeSource build/test.
+
+Downloaded public artifact evidence:
+
+| Configuration | Artifact ID | ZIP SHA256 |
+|---|---|---|
+| Linux, profiling OFF | 12895964763 | `5cd5f87ed74d67d7045b7d0fba03ffb668069ba170636ca7408b6c9ed7ff1545` |
+| Linux, profiling ON | 12897005861 | `19a5df3d5fb7ab7fbfcac2fb08cb5541541ac25ed2896cf0ce5c8ed12979f256` |
+| macOS, profiling OFF | 12897080640 | `ef231eab58d184ff9c91c7f86cc08d58ad31d5550bc5a410e4aa2a56db0e1056` |
+
+All 78 new streaming capture/event/driver-log files are byte-identical across
+these three CI configurations and the local run. The 104 current finite
+transport/codec capture/event/driver-log files also match across configurations.
+All 60 prior PCM/CSV files match the preceding
+[codec milestone's CI](https://github.com/GosuBoy/op1emu/actions/runs/40860133252).
+The finite state/event/log differences are the explicitly documented DMA
+correction, not a preserved incorrect memory-count expectation.
+
+Comparisons exclude normal CLI console logs, which contain build/platform
+details; they include CLI native PCM/CSV. ZIP container identities differ due
+to metadata and console logs. All artifacts contain only public synthetic
+inputs/captures; no private firmware, sources, provenance or traces are uploaded.
 
 See [contract, reproduction, source findings and limits](streaming-audio.md)
 and the [fixture interface](../tests/fixtures/stream_guest/README.md). Exact
