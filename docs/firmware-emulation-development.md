@@ -103,6 +103,8 @@ semantics. The physical panel identity, board clocks and codec output remain
 unverified. The pinned Linux compiler executables and full updater workspace
 remain separate rebuild dependencies. Private inputs and evidence stay outside
 this repository and CI.
+See [the startup validation record](startup-validation.md) for CI results,
+unchanged public capture identities and the private observation's limits.
 
 ## Next development milestones
 
