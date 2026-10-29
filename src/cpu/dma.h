@@ -31,6 +31,13 @@ public:
     // Discard any buffered data. MDMA's internal FIFO is flushed when a new
     // transfer starts; peripheral buses ignore this.
     virtual void DMAFlush() {}
+    // Whether any enabled channel maps to this direction. SPORT suppresses
+    // its PIO service interrupt while the corresponding DMA is enabled.
+    virtual void SetDMAEnabled(bool toMemory, bool enabled) {}
+    // Width of the current channel's memory element, before a bus transfer.
+    // A short peripheral write must accept whole DMA elements as well as
+    // whole peripheral words (e.g. two 16-bit SPORT words per 32-bit element).
+    void SetDMAElementBytes(u32 bytes) { dmaElementBytes_ = bytes; }
 
     // Before which guest time (TimeSource::Nanoseconds()) a DMARead
     // (toMemory) or DMAWrite of `length` bytes would do nothing at all: no
@@ -51,11 +58,13 @@ public:
     void SetDMANotify(bool* flag) { dmaNotify_ = flag; }
 
 protected:
+    u32 DMAElementBytes() const { return dmaElementBytes_; }
     void NotifyDMA() const {
         if (dmaNotify_) *dmaNotify_ = true;
     }
 
 private:
+    u32 dmaElementBytes_ = 1;
     bool* dmaNotify_ = nullptr;
 };
 
@@ -209,6 +218,7 @@ protected:
     // At the end of a service: the pages the settling channels' transfers
     // have yet to reach, watched (SetSettling()).
     void Watch();
+    void UpdateBusEnables();
 
     bool touched_ = true;
     uint64_t idleUntil_ = 0;

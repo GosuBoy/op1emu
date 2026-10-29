@@ -13,7 +13,13 @@ enum DataFormat {
 constexpr std::size_t FIFO_SIZE = 8; // 8x16-bit words or 4x32-bit words
 
 SPORT::SPORT(u32 baseAddr, int sportNum, const TimeSource& time)
-    : RegisterDevice("SPORT" + std::to_string(sportNum), baseAddr, 0x60), sportNumber(sportNum), time_(time) {
+    : RegisterDevice("SPORT" + std::to_string(sportNum), baseAddr, 0x60), sportNumber(sportNum), time_(time), txTransport_(time) {
+
+    txTransport_.SetNotify([this] { NotifyDMA(); });
+    txTransport_.SetInterruptCallback([this](bool tx, bool error) {
+        if (txIrq_ >= 0) TriggerInterrupt(txIrq_, tx);
+        if (errorIrq_ >= 0) TriggerInterrupt(errorIrq_, error);
+    });
 
     REG32(SPORT_TCR1, 0x00);
     FIELD(SPORT_TCR1, TSPEN, 0, 1, R(transmitEnabled), W(transmitEnabled));
@@ -79,6 +85,37 @@ SPORT::SPORT(u32 baseAddr, int sportNum, const TimeSource& time)
     FIELD(SPORT_STAT, TXHRE, 6, 1, R(transmitHoldRegister.has_value()), N());
 }
 
+namespace {
+bool TxRegister(u32 offset) {
+    return offset <= 0x10 || offset == 0x38 || offset == 0x3c;
+}
+}
+
+u32 SPORT::Read32(u32 offset) {
+    if (txTransportEnabled_) {
+        if (TxRegister(offset)) return txTransport_.Read(offset);
+        if (offset == 0x30) return (RegisterDevice::Read32(offset) & 7) | txTransport_.Read(offset);
+    }
+    return RegisterDevice::Read32(offset);
+}
+
+void SPORT::Write32(u32 offset, u32 value) {
+    NotifyDMA();
+    if (txTransportEnabled_ && (TxRegister(offset) || offset == 0x30)) {
+        txTransport_.Write(offset, value);
+        if (offset != 0x30) return;
+    }
+    RegisterDevice::Write32(offset, value);
+}
+
+void SPORT::ProcessWithInterrupt(int) {
+    if (txTransportEnabled_) txTransport_.Advance();
+}
+
+void SPORT::SetDMAEnabled(bool toMemory, bool enabled) {
+    if (!toMemory) txTransport_.SetDMAEnabled(enabled);
+}
+
 int SPORT::Channels(bool receive) const {
     // A stereo frame sync sends a left and then a right word on each data
     // channel in use; the secondary channel sends its words beside the
@@ -107,6 +144,11 @@ uint64_t SPORT::NextSampleNs(uint64_t startNs, uint64_t delivered, NextSample& m
 }
 
 uint64_t SPORT::DMAIdleUntil(bool toMemory, u32 length) const {
+    if (txTransportEnabled_ && !toMemory) {
+        txTransport_.Advance();
+        const auto take = txTransport_.Take(length);
+        return take >= DMAElementBytes() ? 0 : txTransport_.NextEventNs();
+    }
     // The early returns of DMARead/DMAWrite, in their order.
     const bool enabled = toMemory ? receiveEnabled : transmitEnabled;
     if (!enabled) return UINT64_MAX;
@@ -188,6 +230,11 @@ uint64_t SPORT::TxAvailable(uint64_t requestedSamples) const
 
 u32 SPORT::DMAWriteTake(u32 length) const
 {
+    if (txTransportEnabled_) {
+        txTransport_.Advance();
+        const auto take = txTransport_.Take(length);
+        return take - take % DMAElementBytes();
+    }
     // DMAWrite's early returns, then its available samples. Before the first
     // transfer it only starts the clock: nothing is due yet.
     if (!transmitEnabled || !dmaTxActive_) return 0;
@@ -197,6 +244,7 @@ u32 SPORT::DMAWriteTake(u32 length) const
 
 u32 SPORT::DMAWrite(int x, int y, const void* source, u32 length)
 {
+    if (txTransportEnabled_) return txTransport_.Accept(source, DMAWriteTake(length));
     if (!transmitEnabled) {
         return 0;
     }

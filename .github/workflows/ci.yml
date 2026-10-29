@@ -163,6 +163,18 @@ jobs:
       - name: CLI sanity
         run: ./build/op1emu --help
 
+      - name: SPORT transport captures (synthetic MMIO, no firmware)
+        run: |
+          ./build/op1-sport-transport-test --demo build/sport-running > build/sport-running.log
+          ./build/op1-sport-transport-test --demo build/sport-clockless --no-clock > build/sport-clockless.log
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sport-transport-${{ matrix.os }}-profiling-${{ matrix.profiling }}
+          path: |
+            build/sport-running.*
+            build/sport-clockless.*
+
       - name: OpenGL shell regression (Linux)
         if: runner.os == 'Linux'
         run: |

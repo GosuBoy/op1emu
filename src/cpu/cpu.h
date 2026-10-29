@@ -1,4 +1,5 @@
 #pragma once
+#include "sport_tx.h"
 
 #include "emu.h"
 #include "realtime_pacer.h"
@@ -161,7 +162,8 @@ public:
     enum DueSource : uint8_t {
         kDueCap, kDueEnd, kDueCoreTimer, kDueTick, kDueEvent, kDuePanel, kDueRtc, kDueTwi,
         kDueDma,  // + DMAPeripheralType, 16 of them
-        kDueSources = kDueDma + 16
+        kDueSport0 = kDueDma + 16, kDueSport1,
+        kDueSources
     };
     static const char* DueSourceName(unsigned source);
     // IDLE waits so far, the guest cycles they let pass, and what woke them
@@ -173,6 +175,9 @@ public:
 #endif
     // See TWI::SetSpeedup.
     void SetTwiSpeedup(unsigned speedup);
+    // Before running. No external TX clock unless explicitly supplied.
+    void ConfigureSportTxTransport(u32 syntheticBitHz = 0, u32 frameClocks = 64);
+    void SetSportTxWordCallback(std::function<void(int, const SportTxTransport::Word&)> callback);
 
     // True once the JIT could not translate or run a block. The CPU state is
     // then no longer advancing, so the host should stop instead of retrying.
@@ -250,6 +255,7 @@ protected:
         std::shared_ptr<CoreTimer> coreTimer;
         std::shared_ptr<TWI> twi;
         size_t usbIndex = 0, nfcIndex = 0, rtcIndex = 0, dmaIndex = 0, coreTimerIndex = 0, twiIndex = 0;
+        size_t sport0Index = 0, sport1Index = 0;
     } serviced_;
     // Events in guest time (TimeSource::Nanoseconds()), owned by the CPU
     // thread: a min-heap on (due, sequence), so events due together run in

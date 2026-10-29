@@ -226,11 +226,12 @@ u32 DMAChannel::CyclesPerElement(const DMABus& bus) const {
 uint64_t DMAChannel::IdleUntil() const {
     if (!enabled || !running) return UINT64_MAX;
     // ProcessTransfer() logs a missing bus on every call.
-    const DMABus* bus = dma.GetDMABus(peripheralType);
+    DMABus* bus = dma.GetDMABus(peripheralType);
     if (!bus) return 0;
     // The length ProcessTransfer() offers the bus.
     const u32 elementBytes = 1u << wordSize;
     const u32 length = std::min(u32(currXCount) * elementBytes, 4096u);
+    bus->SetDMAElementBytes(elementBytes);
     const uint64_t idle = bus->DMAIdleUntil(memoryWrite, length);
     const u32 pace = CyclesPerElement(*bus);
     if (!pace) return idle;
@@ -335,6 +336,7 @@ u32 DMAChannel::ProcessTransfer(uint64_t now) {
 
     int elementBytes = 1 << wordSize;
     u32 totalBytes = currXCount * elementBytes;
+    bus->SetDMAElementBytes(elementBytes);
 
     u8 buffer[4096];
     totalBytes = std::min(totalBytes, (u32)sizeof(buffer));
@@ -494,6 +496,23 @@ void DMA::Write32(u32 offset, u32 value) {
     if (channelIndex < channels.size()) {
         channels[channelIndex]->Write32(offset % 0x40, value);
         Refresh(channelIndex);
+        if (offset % 0x40 == 0x08 || offset % 0x40 == 0x2c) UpdateBusEnables();
+    }
+}
+
+void DMA::UpdateBusEnables() {
+    for (const auto& [type, bus] : dmaBuses) {
+        bool input = false, output = false;
+        for (const auto& channel : channels) {
+            if (!channel->IsEnabled() || channel->GetPeripheralType() != type) continue;
+            (channel->ToMemory() ? input : output) = true;
+        }
+        // A SPORT is attached twice (RX and TX); do not let the RX mapping
+        // clear the state just published for its TX mapping.
+        if (type == DMAPeripheralSPORT0Tx || type == DMAPeripheralSPORT1Tx)
+            bus->SetDMAEnabled(false, output);
+        else if (type == DMAPeripheralSPORT0Rx || type == DMAPeripheralSPORT1Rx)
+            bus->SetDMAEnabled(true, input);
     }
 }
 

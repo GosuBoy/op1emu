@@ -205,6 +205,21 @@ BlackFinCpu::BlackFinCpu(bool deterministic) : time_(deterministic), pc(0) {
     dma->BindInterrupt(1, IRQ_DMA1, irqHandler);
     dma->BindInterrupt(2, IRQ_DMA2, irqHandler);
     dma->BindInterrupt(3, IRQ_DMA3, irqHandler);
+    // BF52x SIC sources 17/19 are shared by SPORT TX service and DMA4/6.
+    // Keep their levels ORed: acknowledging DMA must not erase PIO service.
+    for (int n = 0; n < 2; ++n) {
+        auto sport = n ? sport1 : sport0;
+        const int pin = 17 + 2 * n;
+        auto levels = std::make_shared<std::array<bool, 2>>();
+        dma->BindInterrupt(4 + 2 * n, pin, [irqHandler, levels, pin](int, int level) {
+            (*levels)[0] = level; irqHandler(pin, (*levels)[0] || (*levels)[1]);
+        });
+        sport->BindTransmitInterrupt(pin, [irqHandler, levels, pin](int, int level) {
+            (*levels)[1] = level; irqHandler(pin, (*levels)[0] || (*levels)[1]);
+        });
+        sport->BindErrorInterrupt(8 + n, irqHandler);
+    }
+    dma->BindInterrupt(5, 18, irqHandler);
     std::shared_ptr<GPIO> portF = std::make_shared<GPIO>("PORTF", 0xFFC00700);
     portF->BindInterruptA(IRQ_PORTF_A, irqHandler);
     portF->BindInterruptB(IRQ_PORTF_B, irqHandler);
@@ -289,6 +304,8 @@ BlackFinCpu::BlackFinCpu(bool deterministic) : time_(deterministic), pc(0) {
     serviced_.dmaIndex = indexOf(serviced_.dma.get());
     serviced_.coreTimerIndex = indexOf(serviced_.coreTimer.get());
     serviced_.twiIndex = indexOf(serviced_.twi.get());
+    serviced_.sport0Index = indexOf(sport0.get());
+    serviced_.sport1Index = indexOf(sport1.get());
 
     std::array<GPIOPeripheral::GPIOConnection, OLED::DATA_PINS> oledDatabus{
         std::tuple<GPIOPeripheral&, int>{*portF, 0},
@@ -639,6 +656,7 @@ bool BlackFinCpu::HostHasWork(int ivg) const {
     const uint64_t nowNs = time_.Nanoseconds();
     return inboxPending_.load(std::memory_order_relaxed) || s.usb->NeedsService() || s.nfc->NeedsService() ||
            s.rtc->NeedsTick() || s.dma->NeedsService(nowNs) ||
+           nowNs >= sport0->TxDeadlineNs() || nowNs >= sport1->TxDeadlineNs() ||
            (ivg == IVG_IVTMR && s.coreTimer->InterruptPending()) ||
            (ivg != TWI::kIvg && s.twi->NeedsService(nowNs));
 }
@@ -649,7 +667,8 @@ bool BlackFinCpu::HostHasWork(int ivg) const {
 uint64_t BlackFinCpu::DueCycles(int ivg) {
     auto& s = serviced_;
     const uint64_t dmaNs = s.dma->IdleUntilNs();
-    uint64_t dueNs = std::min({nextEventNs_, panel_.DeadlineNs(), dmaNs, time_.DueNs(s.rtc->NextChange())});
+    uint64_t dueNs = std::min({nextEventNs_, panel_.DeadlineNs(), dmaNs, time_.DueNs(s.rtc->NextChange()),
+                             sport0->TxDeadlineNs(), sport1->TxDeadlineNs()});
     if (ivg != TWI::kIvg) dueNs = std::min(dueNs, s.twi->NextByteNs());
     uint64_t tick = lastTimerCycles_ + kCyclesPerTimerTick;
     // A TMRCLK timer's next end of period or width, where its TRUN or
@@ -675,6 +694,8 @@ uint64_t BlackFinCpu::DueCycles(int ivg) {
     else if (TimeSource::CyclesAt(nextEventNs_) == due) dueSource_ = kDueEvent;
     else if (TimeSource::CyclesAt(panel_.DeadlineNs()) == due) dueSource_ = kDuePanel;
     else if (TimeSource::CyclesAt(time_.DueNs(s.rtc->NextChange())) == due) dueSource_ = kDueRtc;
+    else if (TimeSource::CyclesAt(sport0->TxDeadlineNs()) == due) dueSource_ = kDueSport0;
+    else if (TimeSource::CyclesAt(sport1->TxDeadlineNs()) == due) dueSource_ = kDueSport1;
     else dueSource_ = kDueTwi;
 #endif
     return due;
@@ -834,7 +855,8 @@ const char* BlackFinCpu::DueSourceName(unsigned source) {
                                        "dma_sport1rx", "dma_sport1tx", "dma_spi", "dma_uart0rx", "dma_uart0tx",
                                        "dma_uart1rx", "dma_uart1tx", "dma_mdmad0", "dma_mdmas0", "dma_mdmad1",
                                        "dma_mdmas1"};
-    return source < kDueDma ? kNames[source] : source < kDueSources ? kDma[source - kDueDma] : "?";
+    return source < kDueDma ? kNames[source] : source < kDueSport0 ? kDma[source - kDueDma] :
+           source == kDueSport0 ? "sport0_tx" : source == kDueSport1 ? "sport1_tx" : "?";
 }
 
 // Why the run returned to the host.
@@ -1084,6 +1106,9 @@ void BlackFinCpu::ServiceDevices(int ivg) {
     if (s.usb->NeedsService()) ServiceDevice(*s.usb, s.usbIndex, ivg);
     if (s.nfc->NeedsService()) ServiceDevice(*s.nfc, s.nfcIndex, ivg);
     if (s.rtc->NeedsTick()) ServiceDevice(*s.rtc, s.rtcIndex, ivg);
+    // TX keeps draining even after DMA_DONE, with DMA disabled, or with PIO.
+    if (time_.Nanoseconds() >= sport0->TxDeadlineNs()) ServiceDevice(*sport0, s.sport0Index, ivg);
+    if (time_.Nanoseconds() >= sport1->TxDeadlineNs()) ServiceDevice(*sport1, s.sport1Index, ivg);
     if (s.dma->NeedsService(time_.Nanoseconds())) ServiceDevice(*s.dma, s.dmaIndex, ivg);
     // The core timer only clears TINT, once the CPU is in its IVG.
     if (ivg == IVG_IVTMR && s.coreTimer->InterruptPending())
@@ -1232,6 +1257,18 @@ void BlackFinCpu::SetPotentiometerValue(u8 value) {
 
 void BlackFinCpu::SetTwiSpeedup(unsigned speedup) {
     serviced_.twi->SetSpeedup(speedup);
+}
+
+void BlackFinCpu::ConfigureSportTxTransport(u32 syntheticBitHz, u32 frameClocks) {
+    for (auto& sport : {sport0, sport1}) {
+        sport->EnableTxTransport();
+        sport->TxTransport().SetExternalClock(syntheticBitHz, frameClocks, syntheticBitHz != 0, syntheticBitHz != 0);
+    }
+}
+
+void BlackFinCpu::SetSportTxWordCallback(std::function<void(int, const SportTxTransport::Word&)> callback) {
+    sport0->TxTransport().SetWordCallback([callback](const auto& word) { callback(0, word); });
+    sport1->TxTransport().SetWordCallback([callback](const auto& word) { callback(1, word); });
 }
 
 void BlackFinCpu::SetBootMode(int mode) {

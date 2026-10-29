@@ -2,6 +2,7 @@
 
 #include "io.h"
 #include "dma.h"
+#include "sport_tx.h"
 #include <vector>
 #include <queue>
 #include <optional>
@@ -30,10 +31,17 @@ public:
     // (guest time stands still between the calls).
     u32 DMAWriteTake(u32 length) const override;
 
-    void Write32(u32 offset, u32 value) override {
-        NotifyDMA();
-        RegisterDevice::Write32(offset, value);
-    }
+    u32 Read32(u32 offset) override;
+    void Write32(u32 offset, u32 value) override;
+    void ProcessWithInterrupt(int ivg) override;
+    void SetDMAEnabled(bool toMemory, bool enabled) override;
+    // Explicit opt-in keeps the original 44.1 kHz DMA audio approximation
+    // available to existing firmware runs and its integration regressions.
+    void EnableTxTransport() { txTransportEnabled_ = true; }
+    SportTxTransport& TxTransport() { return txTransport_; }
+    uint64_t TxDeadlineNs() const { return txTransportEnabled_ ? txTransport_.NextEventNs() : UINT64_MAX; }
+    void BindTransmitInterrupt(int q, InterruptHandler callback) { txIrq_ = q; BindInterrupt(q, std::move(callback)); }
+    void BindErrorInterrupt(int q, InterruptHandler callback) { errorIrq_ = q; BindInterrupt(q, std::move(callback)); }
 
     // Audio callbacks
     void SetAudioOutputCallback(AudioOutputCallback callback) { audioOutputCallback = callback; }
@@ -89,6 +97,9 @@ protected:
     AudioInputCallback audioInputCallback;
 
     const TimeSource& time_;
+    mutable SportTxTransport txTransport_;
+    bool txTransportEnabled_ = false;
+    int txIrq_ = -1, errorIrq_ = -1;
 
     // DMA timing state — TX path
     uint64_t dmaTxStartNs_ = 0;

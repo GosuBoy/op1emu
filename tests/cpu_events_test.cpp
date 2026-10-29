@@ -2,6 +2,7 @@
 // ProcessEvents() whose guest time has reached its due time, events due
 // together in the order they were queued.
 #include "cpu/coretimer.h"
+#include "cpu/nand.h"
 #include "cpu/cpu.h"
 #include "cpu_state.h"
 #include "mmr.h"
@@ -20,11 +21,27 @@ static void Require(bool ok, const char* message) {
     }
 }
 
+struct NoFlash : NandFlash {
+    void SendCommand(u8) override {}
+    void SendAddress(u8) override {}
+    u8 ReadData() override { return 0xff; }
+    void WriteData(u8) override {}
+    bool IsDataReady() const override { return true; }
+    bool IsBusy() const override { return false; }
+    void StartPageRead() override {}
+    void StartPageWrite() override {}
+    u32 PageRead(u8*, u32) override { return 0; }
+    u32 PageWrite(const u8*, u32) override { return 0; }
+    void SetReadCallback(ReadCallback) override {}
+};
+
 class TestCpu : public BlackFinCpu {
 public:
-    TestCpu() : BlackFinCpu(true) { cpuThread_.store(std::this_thread::get_id()); }
+    TestCpu() : BlackFinCpu(true) { cpuThread_.store(std::this_thread::get_id()); AttachNandFlash(std::make_shared<NoFlash>()); }
     void Advance(uint64_t packets) { time_.Retire(packets); }
     using BlackFinCpu::ProcessEvents;
+    using BlackFinCpu::ServiceDevices;
+    using BlackFinCpu::DueCycles;
     CoreTimer& Timer() { return *coreTimer; }
     bcore::CpuState& State() { return *cpuState_; }
 };
@@ -94,6 +111,44 @@ int main() {
         cpu.Advance(10);
         cpu.Timer().Advance(cpu.Time().Cycles());
         Require(ilat(), "the next expiry latches IVG6 again");
+
+        // PIO TX must be on the CPU's event schedule even without a running
+        // DMA channel or subsequent MMIO reads to settle the peripheral.
+        cpu.ConfigureSportTxTransport(1'000'000, 32);
+        std::vector<SportTxTransport::Word> output;
+        cpu.SetSportTxWordCallback([&](int n, const auto& word) {
+            Require(n == 0, "only SPORT0 was enabled");
+            if (word.valid && !word.repeated) output.push_back(word);
+        });
+        auto& emu = cpu.GetEmulator();
+        emu.MemoryWrite16(0xffc00804, 15);
+        emu.MemoryWrite16(0xffc00810, 0x1234);
+        const auto origin = cpu.Time().Nanoseconds();
+        emu.MemoryWrite16(0xffc00800, 0x4401);
+        Require(cpu.DueCycles(-1) <= TimeSource::CyclesAt(origin + 1000), "SPORT deadline bounds CPU chaining/IDLE");
+        cpu.Advance(400); cpu.ServiceDevices(-1);
+        Require(output.empty(), "a word is not transmitted at its first clock edge");
+        cpu.Advance(6400); cpu.ServiceDevices(-1);
+        Require(output.size() == 1 && output[0].value == 0x1234 && output[0].ns == origin + 17'000,
+                "CPU device service completes PIO serialization without DMA or polling");
+        Require(emu.MemoryRead32(0xffc00120) & (1u << 17), "CPU binds SPORT0 PIO service to SIC17");
+        emu.MemoryWrite16(0xffc00800, 0);
+
+        // DMA4 can complete while every word is still clockless. Its actual
+        // CPU interrupt binding (shared with PIO) must survive until W1C.
+        emu.MemoryWrite32(0x1000, 0x4321);
+        emu.MemoryWrite32(0xffc00d04, 0x1000);
+        emu.MemoryWrite16(0xffc00d10, 1);
+        emu.MemoryWrite16(0xffc00d14, 2);
+        emu.MemoryWrite16(0xffc00d08, 0x85);
+        cpu.ConfigureSportTxTransport();
+        emu.MemoryWrite16(0xffc00800, 0x4401);
+        cpu.ServiceDevices(-1);
+        Require(emu.MemoryRead16(0xffc00d28) == 1 && output.size() == 1,
+                "CPU DMA4 completes acceptance without serial output");
+        Require(emu.MemoryRead32(0xffc00120) & (1u << 17), "CPU binds DMA4 completion to SIC17");
+        emu.MemoryWrite16(0xffc00d28, 1);
+        Require(!(emu.MemoryRead32(0xffc00120) & (1u << 17)), "CPU DMA4 IRQ acknowledgment clears shared line with DMAEN set");
     }
     std::filesystem::current_path(original);
     std::filesystem::remove_all(directory);

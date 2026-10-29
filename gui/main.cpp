@@ -2,6 +2,7 @@
 #include "cpu/cpu.h"
 #include "cpu/twi.h"
 #include "peripheral/MT29F4G08.h"
+#include "peripheral/sport_capture.h"
 #include "utils/log.h"
 #include "glfw_display.h"
 #include "headless.h"
@@ -100,6 +101,9 @@ static int RunEmulator(int argc, char* argv[]) {
     bool headless = false;
     bool floatingUI = false;
     bool deterministic = false;
+    bool sportTransport = false;
+    u32 sportClockHz = 0, sportFrameClocks = 64;
+    std::string sportCapture;
     std::optional<long long> rtcEpoch;
     unsigned twiSpeedup = TWI::kDefaultSpeedup;
     unsigned audioBufferMs = MiniaudioOutput::kDefaultBufferMs;
@@ -152,6 +156,26 @@ static int RunEmulator(int argc, char* argv[]) {
         else if (options && arg == "--floating-ui") floatingUI = true;
         else if (options && arg == "--headless") headless = true;
         else if (options && arg == "--deterministic") deterministic = true;
+        else if (options && arg == "--sport-tx-mode") {
+            if (++i == argc) throw std::runtime_error("--sport-tx-mode requires legacy or transport");
+            const std::string mode = argv[i];
+            if (mode != "legacy" && mode != "transport") throw std::runtime_error("invalid SPORT TX mode");
+            sportTransport = mode == "transport";
+        }
+        else if (options && (arg == "--sport-tx-clock" || arg == "--sport-tx-frame-clocks")) {
+            if (++i == argc) throw std::runtime_error(arg + " requires a positive integer");
+            const std::string text = argv[i];
+            if (text.empty() || text.find_first_not_of("0123456789") != std::string::npos)
+                throw std::runtime_error(arg + " requires a positive integer");
+            const auto n = std::stoull(text);
+            if (!n || n > (arg == "--sport-tx-clock" ? 50'000'000u : 131'072u))
+                throw std::runtime_error(arg + " out of range");
+            (arg == "--sport-tx-clock" ? sportClockHz : sportFrameClocks) = u32(n);
+        }
+        else if (options && arg == "--sport-tx-capture") {
+            if (++i == argc || !*argv[i]) throw std::runtime_error("--sport-tx-capture requires a file prefix");
+            sportCapture = argv[i];
+        }
         else if (options && arg == "--no-chain") noChain = true;
         else if (options && arg == "--no-loop-blocks") noLoopBlocks = true;
         else if (options && arg == "--no-idle-wait") noIdleWait = true;
@@ -258,6 +282,10 @@ static int RunEmulator(int argc, char* argv[]) {
                      "                        Drag the casing; Esc restores the title bar.\n"
                      "                        Cmd/Ctrl + +/- resizes, M minimizes, W closes.\n"
                      "  --headless            No GLFW window or host audio device\n"
+                     "  --sport-tx-mode MODE  legacy (default) or transport (clock/FIFO model)\n"
+                     "  --sport-tx-clock HZ   Synthetic external TX bit clock; transport only\n"
+                     "  --sport-tx-frame-clocks N  External full-frame bit clocks (default 64)\n"
+                     "  --sport-tx-capture PREFIX  Native PREFIX.sportN.pcm/.csv; transport only\n"
                      "  --input-script PATH   Read headless commands from PATH instead of stdin\n"
                      "  --deterministic       Run as fast as the host allows, not at the device's\n"
                      "                        pace: repeatable runs, for measurement and tests\n"
@@ -362,6 +390,18 @@ static int RunEmulator(int argc, char* argv[]) {
 
     // Create BlackFin CPU
     BlackFinCpu cpu(deterministic);
+    if (!sportTransport && (sportClockHz || !sportCapture.empty() || sportFrameClocks != 64))
+        throw std::runtime_error("SPORT clock/capture options require --sport-tx-mode transport");
+    if (sportTransport) {
+        cpu.ConfigureSportTxTransport(sportClockHz, sportFrameClocks);
+        std::cerr << "SPORT TX transport: synthetic_external_bit_hz=" << sportClockHz
+                  << " frame_clocks=" << sportFrameClocks << "; codec/routing unmodeled; native capture only\n";
+        if (!sportCapture.empty()) {
+            auto a = std::make_shared<SportCapture>(sportCapture + ".sport0");
+            auto b = std::make_shared<SportCapture>(sportCapture + ".sport1");
+            cpu.SetSportTxWordCallback([a, b](int n, const auto& word) { (n ? b : a)->Write(word); });
+        }
+    }
     cpu.SetTwiSpeedup(twiSpeedup);
     // An LDR runs with the host looking at the PC after every block
     // (LdrExecutionThread).

@@ -68,26 +68,36 @@ The display DMA and GPIO tests must remain registered alongside the existing
 headless, device, parser, and UI regressions. CI uses synthetic inputs; it
 does not qualify a proprietary firmware image or a physical OP-1.
 
+## SPORT transmit milestone
+
+The first transport milestone adds an explicit `--sport-tx-mode transport`
+option with shared PIO/DMA buffering, guest-time clock/FS-driven serialization,
+backpressure, status/interrupts, and native PCM plus timestamped capture.
+`legacy` remains the default for compatibility with established firmware runs.
+
+See [the behavioral contract and reproducible headless demonstrations](sport-transmit.md)
+for sources, model assumptions, supported registers, exact stimulus/output
+identities and the remaining hardware-validation gaps. The transport and two
+capture demonstrations are registered with CTest alongside the existing
+integration regressions. CI uploads firmware-free capture evidence on all
+three native build configurations.
+
+The available custom-firmware sources establish SPORT0/DMA4 selection, but a
+hardware-intended OP-Doom image could not be executed without its separately
+preserved private build/boot inputs. Codec identity/clock routing and physical
+output remain unverified. No proprietary inputs are added to this repository.
+
 ## Next development milestones
 
-The purpose of this branch is to make op1emu useful for the ordinary
-edit-build-test-debug cycle of OP-Doom and other custom firmware.
-
-1. Record reproducible firmware fixtures and run provenance, including the
-   emulator revision, image identities, inputs, and initial boot state.
-2. Add a coherent codec/clock/SPORT/FIFO/DMA model so hardware-intended audio
-   initialization can execute with its checks intact. Cover both successful
-   transfer and missing-clock/backpressure behavior.
-3. Extend deterministic controls and timestamped native PCM capture for
-   gameplay, display, mixer, and streaming regressions.
-4. Develop portable guest inspection and debugging, then complete machine
-   checkpoints and targeted interrupt/reset qualification.
-
-These are future milestones. This integration does not implement the missing
-audio model or incorporate the separate OP-Doom emulator-only checkpoint.
-Existing provisioning/decryption and SVG features retain their documented
-experimental scope. OTP retrieval remains explicit and opt-in; normal tests
-use synthetic inputs and do not fetch OTP or firmware.
+1. Restore the pinned OP-Doom fixture privately with exact image/boot/compiler
+   provenance; establish codec identity and board clock routing; run unchanged
+   initialization and compare clock/FS/DMA observations with hardware.
+2. Qualify DMA prefetch/SYNC completion, descriptor timing and codec controls
+   needed by that fixture; extend the bounded transport only where evidenced.
+3. Extend deterministic controls and native capture for gameplay, display,
+   mixer and streaming regressions, keeping host playback separate.
+4. Develop portable guest inspection/debugging, then machine checkpoints and
+   targeted interrupt/reset qualification.
 
 ## Keeping the branch maintainable
 
