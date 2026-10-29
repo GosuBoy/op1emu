@@ -15,15 +15,17 @@ with no perspective transform on the screen. No Figma reference was provided;
 Inkscape is the independent reference here.
 
 The blank screen rectangle is x=282.227, y=20.7792, w=258.784, h=126.956.
-The live 2:1 framebuffer is placed at x=298, y=32, w=224, h=112, leaving
-black glass visible on all four sides. The user's hardware photograph was
+The live 2:1 framebuffer is placed at x=295.5, y=32, w=231, h=115.5, with
+the whole framebuffer inside the recess. The user's hardware photograph was
 aligned by the recess corners; the track-number outline and tape-reel centers
-were compared to the emulator capture. This places the image about 2.6% smaller
-and slightly lower than the initial centered inset, matching the photo's wider
-top margin. Coordinates are rounded rather than implying precision from a
-handheld photograph. This is a visual calibration, not a physical display
-measurement. Screen quads also support perspective transforms (covered by
-the GL harness).
+were compared to the emulator capture. A subsequent marked reference requested
+a lower tape-playhead endpoint. The user chose to keep the full framebuffer
+visible after seeing that an exact match would crop its bottom. This placement
+enlarges the photo-calibrated image by 3.1%, retains its top position and stays
+just inside the bottom of the glass. The playhead endpoint remains above the
+marked target; no source pixels are cropped or stretched. This is a visual
+calibration, not a physical display measurement. Screen quads also support
+perspective transforms (covered by the GL harness).
 
 ## Reference comparisons
 
