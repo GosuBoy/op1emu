@@ -41,7 +41,13 @@ class GLFWDisplay : public Display, public Keyboard {
     bool IsControl(UIPoint point) const;
     void RestoreWindowFrame();
     void ResizeFloating(double factor);
-    void OpenThemeMenu(double x, double y);
+    bool HasThemeButton() const;
+    double CanvasWidth() const;
+    // Shared by screen rendering, SVG raster density and logical mouse coordinates.
+    UIFit PanelFit(int width, int height) const;
+    bool ThemeButtonContains(double x, double y) const;
+    void DrawThemeButton(int width, int height);
+    void OpenThemeMenu();
     void CloseThemeMenu();
     void FitThemeMenu(int width, int height);
     int ThemeMenuRow(double x, double y) const;
@@ -72,6 +78,7 @@ class GLFWDisplay : public Display, public Keyboard {
     std::optional<std::string> pendingTheme_;
     std::string renderingTheme_;
     bool themeMenuOpen_ = false, suppressLeftRelease_ = false;
+    bool themeButtonHovered_ = false, themeButtonFocused_ = false;
     UIPoint themeMenuPosition_;
     double themeMenuScale_ = 1;
     int themeMenuHover_ = -1, menuTextureWidth_ = 0, menuTextureHeight_ = 0;

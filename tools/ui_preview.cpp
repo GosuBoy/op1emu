@@ -29,6 +29,17 @@ class UIPreview {
             d.UpdateRowBuffer(0, y, row.data(), width * 2);
         }
     }
+    static void ClickThemeButton(GLFWDisplay &d) {
+        int width, height;
+        glfwGetWindowSize(d.window_, &width, &height);
+        const auto fit = d.PanelFit(width, height);
+        const double x = fit.x + (d.artWidth_ + 32) * fit.scale, y = fit.y + 28 * fit.scale;
+        Require(d.ThemeButtonContains(x, y) && fit.ToArt({x, y}).x > d.artWidth_,
+                "dropdown button is outside the SVG body");
+        GLFWDisplay::CursorPositionCallback(d.window_, x, y);
+        GLFWDisplay::MouseButtonCallback(d.window_, GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, 0);
+        GLFWDisplay::MouseButtonCallback(d.window_, GLFW_MOUSE_BUTTON_LEFT, GLFW_RELEASE, 0);
+    }
     static std::vector<uint8_t> Read(GLFWDisplay &d, int &w, int &h) {
         glfwGetFramebufferSize(d.window_, &w, &h);
         std::vector<uint8_t> rgba(size_t(w) * h * 4);
@@ -47,7 +58,7 @@ class UIPreview {
         int lw, lh, w, h;
         glfwGetWindowSize(d.window_, &lw, &lh);
         auto pixels = Read(d, w, h);
-        auto fit = UIFit::Into(d.artWidth_, d.artHeight_, lw, lh);
+        auto fit = d.PanelFit(lw, lh);
         auto matrix = UIScreenMatrix(d.uiConfig_.screen);
         int index = 0;
         // Clockwise rotation maps source BL/TL/BR/TR to screen TL/TR/BL/BR.
@@ -72,7 +83,7 @@ class UIPreview {
         int lw, lh, w, h;
         glfwGetWindowSize(d.window_, &lw, &lh);
         auto pixels = Read(d, w, h);
-        auto fit = UIFit::Into(d.artWidth_, d.artHeight_, lw, lh);
+        auto fit = d.PanelFit(lw, lh);
         auto m = UIScreenMatrix(d.uiConfig_.screen);
         const double q = (m[3] + m[7]) * .5 + 1;
         const int x = int((fit.x + fit.scale * ((m[0] + m[4]) * .5 + m[12]) / q) * w / lw);
@@ -117,9 +128,8 @@ class UIPreview {
             if (floating) {
                 if (d.floating_) {
                     Require(!glfwGetWindowAttrib(d.window_, GLFW_DECORATED), "floating window has no title bar");
-                    GLFWDisplay::CursorPositionCallback(d.window_, 100, 50);
-                    GLFWDisplay::MouseButtonCallback(d.window_, GLFW_MOUSE_BUTTON_RIGHT, GLFW_PRESS, 0);
-                    Require(d.themeMenuOpen_, "right-click opens menu in floating mode");
+                    ClickThemeButton(d);
+                    Require(d.themeMenuOpen_, "left-click dropdown opens menu in floating mode");
                     GLFWDisplay::KeyCallback(d.window_, GLFW_KEY_ESCAPE, 0, GLFW_PRESS, 0);
                     Require(!d.themeMenuOpen_ && d.floating_ && !glfwGetWindowAttrib(d.window_, GLFW_DECORATED),
                             "Escape dismisses menu before restoring the floating frame");
@@ -127,11 +137,13 @@ class UIPreview {
                     auto pixels = Read(d, w, h);
                     Require(pixels[3] == 0 && pixels[(size_t(h / 2) * w + w / 2) * 4 + 3] == 255,
                             "floating window has transparent corners and an opaque body");
+                    Require(pixels[(size_t(h / 2) * w + w - 10) * 4 + 3] == 0,
+                            "space below the dropdown remains transparent");
                     std::vector<std::tuple<int, int, bool>> events;
                     d.SetKeyEventCallback([&](int bank, int pin, bool down) { events.emplace_back(bank, pin, down); });
                     int lw, lh;
                     glfwGetWindowSize(d.window_, &lw, &lh);
-                    auto fit = UIFit::Into(d.artWidth_, d.artHeight_, lw, lh);
+                    auto fit = d.PanelFit(lw, lh);
                     for (const auto &button : d.uiConfig_.buttons) {
                         UIPoint p{};
                         for (auto corner : button.region.polygon) {
@@ -190,8 +202,8 @@ class UIPreview {
                     glfwPollEvents();
                     int resizedWidth, resizedHeight;
                     glfwGetWindowSize(d.window_, &resizedWidth, &resizedHeight);
-                    Require(resizedWidth > lw && std::abs(double(resizedWidth) / resizedHeight - d.artWidth_ / d.artHeight_) < .02,
-                            "floating keyboard resize preserves the panel aspect");
+                    Require(resizedWidth > lw && std::abs(double(resizedWidth) / resizedHeight - d.CanvasWidth() / d.artHeight_) < .02,
+                            "floating keyboard resize preserves the body and button-margin aspect");
                     GLFWDisplay::KeyCallback(d.window_, GLFW_KEY_W, 0, GLFW_PRESS, GLFW_MOD_CONTROL);
                     Require(d.ShouldClose(), "floating close shortcut works");
                     glfwSetWindowShouldClose(d.window_, GLFW_FALSE);
@@ -266,7 +278,7 @@ class UIPreview {
             Require(synth != d.uiConfig_.buttons.end(), "Synth control exists");
             int inputWidth, inputHeight;
             glfwGetWindowSize(d.window_, &inputWidth, &inputHeight);
-            auto inputFit = UIFit::Into(d.artWidth_, d.artHeight_, inputWidth, inputHeight);
+            auto inputFit = d.PanelFit(inputWidth, inputHeight);
             UIPoint center{};
             for (auto p : synth->region.polygon) {
                 center.x += p.x / 4;
@@ -291,19 +303,28 @@ class UIPreview {
             if (SvgBackgroundRenderer::Available()) {
                 d.theme_.clear();
                 d.LoadPanel("gui/ui-svg.json");
+                Require(d.CanvasWidth() == 1268 && d.artWidth_ == 1204 && d.artHeight_ == 434,
+                        "button margin adds 64 pixels without changing artwork dimensions");
+                glfwSetWindowSize(d.window_, 1268, 434);
+                draw();
+                std::this_thread::sleep_for(std::chrono::milliseconds(140));
+                draw();
                 const auto layout = UILayout::Load("gui/ui-svg.json");
                 const auto backgroundTexture = d.backgroundTexture_, liveTexture = d.texture_;
                 auto *const sameWindow = d.window_;
                 int lw, lh;
                 glfwGetWindowSize(d.window_, &lw, &lh);
                 const auto openMenu = [&] {
-                    GLFWDisplay::CursorPositionCallback(d.window_, lw - 5, lh - 5);
-                    GLFWDisplay::MouseButtonCallback(d.window_, GLFW_MOUSE_BUTTON_RIGHT, GLFW_PRESS, 0);
-                    GLFWDisplay::MouseButtonCallback(d.window_, GLFW_MOUSE_BUTTON_RIGHT, GLFW_RELEASE, 0);
-                    Require(d.themeMenuOpen_ && !d.dragging_, "right-click opens a non-dragging menu");
+                    ClickThemeButton(d);
+                    Require(d.themeMenuOpen_ && !d.dragging_, "dropdown opens without dragging the window");
                     Require(d.themeMenuPosition_.x + 220 * d.themeMenuScale_ <= lw &&
                                 d.themeMenuPosition_.y + 244 * d.themeMenuScale_ <= lh,
                             "popup fits inside the window at its edges");
+                    const auto fit = d.PanelFit(lw, lh);
+                    Require(std::abs(d.themeMenuPosition_.x + 220 * d.themeMenuScale_ -
+                                     (fit.x + (d.artWidth_ + 52) * fit.scale)) < 1 &&
+                                d.themeMenuPosition_.y >= fit.y + 48 * fit.scale,
+                            "menu opens below and aligns with the dropdown button");
                 };
                 const auto finishSwitch = [&] {
                     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(20);
@@ -326,6 +347,13 @@ class UIPreview {
                 };
                 keys.clear();
                 d.SetKeyEventCallback([&](int bank, int pin, bool down) { keys.emplace_back(bank, pin, down); });
+                GLFWDisplay::CursorPositionCallback(d.window_, 100, 100);
+                GLFWDisplay::MouseButtonCallback(d.window_, GLFW_MOUSE_BUTTON_RIGHT, GLFW_PRESS, 0);
+                GLFWDisplay::MouseButtonCallback(d.window_, GLFW_MOUSE_BUTTON_RIGHT, GLFW_RELEASE, 0);
+                Require(!d.themeMenuOpen_ && keys.empty(), "right-click no longer opens the moved selector");
+                openMenu();
+                ClickThemeButton(d);
+                Require(!d.themeMenuOpen_ && !d.dragging_ && keys.empty(), "dropdown button toggles the menu closed");
                 const char *presets[] = {"slate", "silver", "yellow", "green", "purple", "orange"};
                 for (int i = 0; i < 6; ++i) {
                     openMenu();
@@ -358,6 +386,11 @@ class UIPreview {
                 GLFWDisplay::MouseButtonCallback(d.window_, GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, 0);
                 GLFWDisplay::MouseButtonCallback(d.window_, GLFW_MOUSE_BUTTON_LEFT, GLFW_RELEASE, 0);
                 Require(!d.themeMenuOpen_ && !d.pendingTheme_ && keys.empty(), "outside click dismisses without input");
+                GLFWDisplay::KeyCallback(d.window_, GLFW_KEY_TAB, 0, GLFW_PRESS, 0);
+                Require(d.themeButtonFocused_, "Tab focuses the dropdown");
+                GLFWDisplay::KeyCallback(d.window_, GLFW_KEY_ENTER, 0, GLFW_PRESS, 0);
+                Require(d.themeMenuOpen_, "Enter opens the focused dropdown");
+                GLFWDisplay::KeyCallback(d.window_, GLFW_KEY_ESCAPE, 0, GLFW_PRESS, 0);
                 openMenu();
                 GLFWDisplay::FocusCallback(d.window_, GLFW_FALSE);
                 Require(!d.themeMenuOpen_, "focus loss dismisses the popup");
@@ -370,10 +403,19 @@ class UIPreview {
                 d.RequestTheme("no-such-theme.json");
                 finishSwitch();
                 Require(d.theme_ == "green" && bool(d.svg_), "bad palette keeps the current theme");
+                glfwSetWindowSize(d.window_, 317, 109);
+                draw();
+                ClickThemeButton(d);
+                draw();
+                Require(d.themeMenuPosition_.x >= 0 && d.themeMenuPosition_.y >= 0 &&
+                            d.themeMenuPosition_.x + 220 * d.themeMenuScale_ <= 317 &&
+                            d.themeMenuPosition_.y + 244 * d.themeMenuScale_ <= 109,
+                        "dropdown stays reachable and fits at quarter-size");
+                GLFWDisplay::KeyCallback(d.window_, GLFW_KEY_ESCAPE, 0, GLFW_PRESS, 0);
                 d.SetKeyEventCallback({});
                 draw();
                 Check(d);
-                std::cout << "Theme popup: six live swaps, checkmarks, keyboard/outside/focus dismissal, input isolation, "
+                std::cout << "Theme dropdown: outside-body button, anchoring, six live swaps, checkmarks, keyboard/outside/focus dismissal, input isolation, "
                              "texture reuse, live frames, latest-request and failure recovery passed\n";
             }
             std::cout

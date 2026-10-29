@@ -17,6 +17,7 @@
 namespace {
 constexpr const char *themes[] = {"slate", "silver", "yellow", "green", "purple", "orange"};
 constexpr double menuWidth = 220, menuHeight = 244, menuTop = 36, menuRowHeight = 34;
+constexpr double themeRailWidth = 64, themeButtonGap = 12, themeButtonTop = 8, themeButtonSize = 40;
 void MenuRect(double x, double y, double width, double height, double radius) {
     constexpr double pi = 3.14159265358979323846;
     glBegin(GL_TRIANGLE_FAN);
@@ -73,14 +74,14 @@ GLFWDisplay::GLFWDisplay(const std::string &configPath, bool floating, const std
             std::cerr << "UI config failed: " << e.what() << "; falling back to gui/ui.json\n";
             LoadPanel("gui/ui.json");
         }
-        glfwSetWindowSize(window_, std::max(1, int(artWidth_ * uiConfig_.scale)),
+        glfwSetWindowSize(window_, std::max(1, int(CanvasWidth() * uiConfig_.scale)),
                           std::max(1, int(artHeight_ * uiConfig_.scale)));
         if (floating_) {
             if (!svg_ || !glfwGetWindowAttrib(window_, GLFW_TRANSPARENT_FRAMEBUFFER)) {
                 std::cerr << "Floating UI needs SVG artwork and desktop transparency; using a standard window\n";
                 RestoreWindowFrame();
             } else {
-                glfwSetWindowAspectRatio(window_, std::max(1, int(std::lround(artWidth_))),
+                glfwSetWindowAspectRatio(window_, std::max(1, int(std::lround(CanvasWidth()))),
                                          std::max(1, int(std::lround(artHeight_))));
             }
         }
@@ -131,6 +132,7 @@ void GLFWDisplay::UploadBackground(const uint8_t *data, int width, int height) {
 }
 void GLFWDisplay::LoadPanel(const std::string &path) {
     CloseThemeMenu();
+    themeButtonHovered_ = themeButtonFocused_ = false;
     auto config = UILayout::Load(path);
     std::unique_ptr<SvgBackgroundRenderer> svg;
     if (config.svg) {
@@ -192,7 +194,7 @@ void GLFWDisplay::UpdateRowBuffer(int x, int y, const void *data, int length) {
 void GLFWDisplay::UpdateSvgCache(int lw, int lh, int fw, int fh) {
     if (!svg_)
         return;
-    const auto fit = UIFit::Into(artWidth_, artHeight_, lw, lh);
+    const auto fit = PanelFit(lw, lh);
     double w = artWidth_ * fit.scale * fw / lw, h = artHeight_ * fit.scale * fh / lh;
     GLint maxTexture;
     glGetIntegerv(GL_MAX_TEXTURE_SIZE, &maxTexture);
@@ -326,7 +328,7 @@ void GLFWDisplay::RenderFramebuffer(bool present) {
     glMatrixMode(GL_MODELVIEW);
     glPushMatrix();
     glLoadIdentity();
-    const auto fit = UIFit::Into(artWidth_, artHeight_, lw, lh);
+    const auto fit = PanelFit(lw, lh);
     glTranslated(fit.x, fit.y, 0);
     glScaled(fit.scale, fit.scale, 1);
     glColor4f(1, 1, 1, 1);
@@ -335,6 +337,7 @@ void GLFWDisplay::RenderFramebuffer(bool present) {
     DrawBackground();
     DrawScreen();
     glLoadIdentity();
+    DrawThemeButton(lw, lh);
     DrawThemeMenu(lw, lh, fw, fh);
     glPopMatrix();
     glMatrixMode(GL_PROJECTION);
@@ -372,10 +375,68 @@ void GLFWDisplay::RestoreWindowFrame() {
 void GLFWDisplay::ResizeFloating(double factor) {
     int width, height;
     glfwGetWindowSize(window_, &width, &height);
-    const int base = std::max(4, int(std::lround(artWidth_ * uiConfig_.scale)));
+    const int base = std::max(4, int(std::lround(CanvasWidth() * uiConfig_.scale)));
     width = std::clamp(int(std::lround(width * factor)), base / 4, base * 3);
-    height = std::max(1, int(std::lround(width * artHeight_ / artWidth_)));
+    height = std::max(1, int(std::lround(width * artHeight_ / CanvasWidth())));
     glfwSetWindowSize(window_, width, height);
+}
+bool GLFWDisplay::HasThemeButton() const {
+    return svg_ && !uiConfig_.themeBackground.empty();
+}
+double GLFWDisplay::CanvasWidth() const {
+    return artWidth_ + (HasThemeButton() ? themeRailWidth : 0);
+}
+UIFit GLFWDisplay::PanelFit(int width, int height) const {
+    return UIFit::Into(CanvasWidth(), artHeight_, width, height);
+}
+bool GLFWDisplay::ThemeButtonContains(double x, double y) const {
+    if (!HasThemeButton())
+        return false;
+    int width, height;
+    glfwGetWindowSize(window_, &width, &height);
+    if (width <= 0 || height <= 0)
+        return false;
+    const auto point = PanelFit(width, height).ToArt({x, y});
+    return point.x >= artWidth_ + themeButtonGap && point.x < artWidth_ + themeButtonGap + themeButtonSize &&
+           point.y >= themeButtonTop && point.y < themeButtonTop + themeButtonSize;
+}
+void GLFWDisplay::DrawThemeButton(int width, int height) {
+    if (!HasThemeButton())
+        return;
+    const auto fit = PanelFit(width, height);
+    glPushMatrix();
+    glTranslated(fit.x + (artWidth_ + themeButtonGap) * fit.scale, fit.y + themeButtonTop * fit.scale, 0);
+    glScaled(fit.scale, fit.scale, 1);
+    glDisable(GL_TEXTURE_2D);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+    if (themeButtonFocused_)
+        glColor4f(.46f, .65f, 1, 1);
+    else
+        glColor4f(.36f, .38f, .43f, 1);
+    MenuRect(0, 0, themeButtonSize, themeButtonSize, 9);
+    if (themeMenuOpen_ || themeButtonHovered_)
+        glColor4f(.25f, .28f, .34f, 1);
+    else
+        glColor4f(.14f, .15f, .18f, 1);
+    MenuRect(1, 1, themeButtonSize - 2, themeButtonSize - 2, 8);
+    glColor4f(.93f, .94f, .97f, 1);
+    if (themeMenuOpen_) {
+        glTranslated(0, themeButtonSize, 0);
+        glScaled(1, -1, 1);
+    }
+    // Filled chevron keeps a consistent shape at fractional and Retina scales.
+    glBegin(GL_QUADS);
+    glVertex2d(12, 17);
+    glVertex2d(14, 15);
+    glVertex2d(20, 21);
+    glVertex2d(20, 25);
+    glVertex2d(20, 21);
+    glVertex2d(26, 15);
+    glVertex2d(28, 17);
+    glVertex2d(20, 25);
+    glEnd();
+    glPopMatrix();
 }
 int GLFWDisplay::SelectedThemeRow() const {
     if (theme_.empty())
@@ -388,6 +449,9 @@ int GLFWDisplay::SelectedThemeRow() const {
 }
 void GLFWDisplay::FitThemeMenu(int width, int height) {
     themeMenuScale_ = std::max(.01, std::min({1.0, (width - 8.0) / menuWidth, (height - 8.0) / menuHeight}));
+    const auto fit = PanelFit(width, height);
+    themeMenuPosition_ = {fit.x + (artWidth_ + themeButtonGap + themeButtonSize) * fit.scale - menuWidth * themeMenuScale_,
+                          fit.y + (themeButtonTop + themeButtonSize + 8) * fit.scale};
     themeMenuPosition_.x = std::clamp(themeMenuPosition_.x, 4.0, std::max(4.0, width - menuWidth * themeMenuScale_ - 4));
     themeMenuPosition_.y = std::clamp(themeMenuPosition_.y, 4.0, std::max(4.0, height - menuHeight * themeMenuScale_ - 4));
 }
@@ -398,8 +462,8 @@ int GLFWDisplay::ThemeMenuRow(double x, double y) const {
         return -1;
     return int((y - menuTop) / menuRowHeight);
 }
-void GLFWDisplay::OpenThemeMenu(double x, double y) {
-    if (!svg_ || uiConfig_.themeBackground.empty())
+void GLFWDisplay::OpenThemeMenu() {
+    if (!HasThemeButton())
         return;
     try {
         if (!menuSvg_)
@@ -410,7 +474,6 @@ void GLFWDisplay::OpenThemeMenu(double x, double y) {
             themeSwatches_[i] = {float((color >> 16) & 255) / 255, float((color >> 8) & 255) / 255,
                                  float(color & 255) / 255};
         }
-        themeMenuPosition_ = {x, y};
         int width, height;
         glfwGetWindowSize(window_, &width, &height);
         FitThemeMenu(width, height);
@@ -536,6 +599,7 @@ void GLFWDisplay::CursorPositionCallback(GLFWwindow *w, double x, double y) {
     auto *self = static_cast<GLFWDisplay *>(glfwGetWindowUserPointer(w));
     self->cursorPosition_ = {x, y};
     self->hasCursorPosition_ = true;
+    self->themeButtonHovered_ = self->ThemeButtonContains(x, y);
     if (self->themeMenuOpen_) {
         self->themeMenuHover_ = self->ThemeMenuRow(x, y);
         return;
@@ -547,9 +611,8 @@ void GLFWDisplay::CursorPositionCallback(GLFWwindow *w, double x, double y) {
                          wy + int(std::lround(y - self->dragOffset_.y)));
     }
 }
-void GLFWDisplay::MouseButtonCallback(GLFWwindow *w, int button, int action, int mods) {
-    if ((button != GLFW_MOUSE_BUTTON_LEFT && button != GLFW_MOUSE_BUTTON_RIGHT) ||
-        (action != GLFW_PRESS && action != GLFW_RELEASE))
+void GLFWDisplay::MouseButtonCallback(GLFWwindow *w, int button, int action, int) {
+    if (button != GLFW_MOUSE_BUTTON_LEFT || (action != GLFW_PRESS && action != GLFW_RELEASE))
         return;
     auto *self = static_cast<GLFWDisplay *>(glfwGetWindowUserPointer(w));
     double x, y;
@@ -563,15 +626,18 @@ void GLFWDisplay::MouseButtonCallback(GLFWwindow *w, int button, int action, int
         glfwGetCursorPos(w, &x, &y);
     }
     glfwGetWindowSize(w, &width, &height);
-    bool contextClick = button == GLFW_MOUSE_BUTTON_RIGHT;
-#ifdef __APPLE__
-    contextClick = contextClick || (button == GLFW_MOUSE_BUTTON_LEFT && (mods & GLFW_MOD_CONTROL));
-#else
-    (void)mods;
-#endif
-    if (contextClick) {
-        if (action == GLFW_PRESS)
-            self->OpenThemeMenu(x, y);
+    if (self->suppressLeftRelease_ && action == GLFW_RELEASE) {
+        self->suppressLeftRelease_ = false;
+        return;
+    }
+    if (action == GLFW_PRESS && self->ThemeButtonContains(x, y)) {
+        self->themeButtonFocused_ = true;
+        if (self->themeMenuOpen_)
+            self->CloseThemeMenu();
+        else
+            self->OpenThemeMenu();
+        self->suppressLeftRelease_ = true;
+        self->dragging_ = false;
         return;
     }
     if (self->themeMenuOpen_) {
@@ -579,21 +645,21 @@ void GLFWDisplay::MouseButtonCallback(GLFWwindow *w, int button, int action, int
             const int row = self->ThemeMenuRow(x, y);
             if (row >= 0)
                 self->RequestTheme(themes[row]);
+            else
+                self->themeButtonFocused_ = false;
             self->CloseThemeMenu();
             self->suppressLeftRelease_ = true;
         }
-        return;
-    }
-    if (self->suppressLeftRelease_) {
-        if (action == GLFW_RELEASE)
-            self->suppressLeftRelease_ = false;
         return;
     }
     if (action == GLFW_RELEASE) {
         self->dragging_ = false;
         self->input_.Mouse(false, {});
     } else if (width > 0 && height > 0) {
-        const auto point = UIFit::Into(self->artWidth_, self->artHeight_, width, height).ToArt({x, y});
+        self->themeButtonFocused_ = false;
+        const auto point = self->PanelFit(width, height).ToArt({x, y});
+        if (point.x < 0 || point.y < 0 || point.x > self->artWidth_ || point.y > self->artHeight_)
+            return; // the transparent button margin is not an instrument control or drag region
         if (self->floating_ && point.x >= 0 && point.y >= 0 && point.x <= self->artWidth_ &&
             point.y <= self->artHeight_ && !self->IsControl(point)) {
             self->dragging_ = true;
@@ -622,6 +688,20 @@ void GLFWDisplay::KeyCallback(GLFWwindow *w, int key, int, int action, int mods)
             }
         }
         return;
+    }
+    if (self->HasThemeButton()) {
+        if (key == GLFW_KEY_TAB) {
+            if (action == GLFW_PRESS) {
+                self->themeButtonFocused_ = !self->themeButtonFocused_;
+                self->input_.ReleaseAll();
+            }
+            return;
+        }
+        if (self->themeButtonFocused_ && action == GLFW_PRESS &&
+            (key == GLFW_KEY_ENTER || key == GLFW_KEY_KP_ENTER || key == GLFW_KEY_SPACE)) {
+            self->OpenThemeMenu();
+            return;
+        }
     }
     if (self->floating_ && action == GLFW_PRESS) {
         if (key == GLFW_KEY_ESCAPE) {
@@ -659,6 +739,7 @@ void GLFWDisplay::FocusCallback(GLFWwindow *w, int focused) {
         self->input_.ReleaseAll();
         self->CloseThemeMenu();
         self->suppressLeftRelease_ = false;
+        self->themeButtonHovered_ = self->themeButtonFocused_ = false;
         self->hasCursorPosition_ = false;
         self->dragging_ = false;
     }

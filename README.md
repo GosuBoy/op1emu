@@ -278,10 +278,11 @@ The palette experiment adds six optional SVG themes: `slate`, `silver`, `yellow`
 ```
 
 `--theme PATH.json` loads custom colors. See [theme files and comparison generation](gui/themes/README.md).
-**Right-click the SVG window to switch themes while it runs.** The menu marks the
-current preset and shows color swatches. Click a theme, or use the arrow keys and
-Enter. Escape, clicking outside, or switching apps dismisses the menu. On macOS,
-Control-click also opens it. The live display and audio continue while it is open;
+**Click the dropdown beside the SVG body's upper-right corner to switch themes.**
+The menu opens beneath the button, marks the current preset and shows color
+swatches. Click a theme, or use the arrow keys and Enter. Tab focuses the button;
+Enter or Space opens it. Escape, clicking outside, clicking the button again, or
+switching apps dismisses the menu. The live display and audio continue while it is open;
 theme rendering runs in the background. The selection lasts for this session.
 
 Try the optional body-only SVG window:
@@ -298,6 +299,9 @@ aspect ratio and is not made always-on-top. PNG fallback or unavailable desktop
 transparency restores a normal window. This experiment has been verified locally
 on macOS; compositor and window-positioning support varies on Linux/Wayland.
 macOS may still display its own screen-sharing indicator during window sharing.
+The SVG window includes a small transparent margin for the dropdown button;
+the instrument body and button scale together, with the screen and controls
+using the same artwork coordinates. The original PNG panel has no added margin.
 
 Firmware-free checks and transparent capture:
 
