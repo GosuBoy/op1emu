@@ -1,98 +1,58 @@
 #pragma once
-
 #include "peripheral/display.h"
 #include "peripheral/keyboard.h"
+#include "svg_background_renderer.h"
+#include "ui_layout.h"
 #include <GLFW/glfw3.h>
-#include <vector>
-#include <tuple>
-#include <cstdint>
-#include <string>
+#include <chrono>
+#include <memory>
 #include <mutex>
-
-struct DisplayRect {
-    int left;
-    int top;
-    int width;
-    int height;
-};
-
-struct ButtonConfig {
-    int left;
-    int top;
-    int width;
-    int height;
-    int bank;
-    int index;
-    std::string name;
-};
-
-struct KeycapConfig {
-    std::string name;
-    int glfwKey; // GLFW key code
-    int bank;
-    int index;
-};
-
-struct KnobConfig {
-    int clockwiseLeft;
-    int clockwiseTop;
-    int clockwiseWidth;
-    int clockwiseHeight;
-    int counterClockwiseLeft;
-    int counterClockwiseTop;
-    int counterClockwiseWidth;
-    int counterClockwiseHeight;
-};
-
-struct UIConfig {
-    std::string background;
-    DisplayRect display;
-    float scale = 1.0f;
-    std::vector<ButtonConfig> buttons;
-    std::vector<KeycapConfig> keycaps;
-    std::vector<std::tuple<ButtonConfig, ButtonConfig, uint8_t>> encoders;
-    KnobConfig volumeKnob;
-};
+#include <vector>
 
 class GLFWDisplay : public Display, public Keyboard {
-public:
-    GLFWDisplay();
+  public:
+    explicit GLFWDisplay(const std::string &configPath = "gui/ui.json", bool floating = false);
     ~GLFWDisplay() override;
-
-    // Display interface
     void Initialize(int rows, int lines) override;
-    void UpdateRowBuffer(int x, int y, const void* data, int length) override;
-    void RenderFramebuffer();
+    void UpdateRowBuffer(int x, int y, const void *data, int length) override;
+    void RenderFramebuffer(bool present = true);
     void PollEvents();
     bool ShouldClose() const;
     void SwapBuffers();
     void SetDisplayRotation(int degrees);
-    uint8_t GetVolumeValue() const { return volumeValue_; }
+    uint8_t GetVolumeValue() const { return input_.Volume(); }
 
-private:
-    void CreateTexture();
-    void LoadUIConfig(const std::string& path);
-    GLuint LoadBackgroundTexture(const std::string& path, int& width, int& height);
-    void DrawTexturedQuad(GLuint texture, float x, float y, float w, float h, float texW = 1.0f, float texH = 1.0f);
-    static void MouseButtonCallback(GLFWwindow* window, int button, int action, int mods);
-    static void KeyCallback(GLFWwindow* window, int key, int scancode, int action, int mods);
-    void HandleMouseButton(int button, int action, double x, double y);
-    void HandleKeyboard(int key, int action);
-    int MapKeyNameToGLFW(const std::string& keyName);
-
-    GLFWwindow* window_ = nullptr;
-    GLuint texture_ = 0;
-    GLuint backgroundTexture_ = 0;
+  private:
+    friend class UIPreview; // firmware-free GL regression/capture harness
+    void LoadPanel(const std::string &path);
+    void UploadBackground(const uint8_t *data, int width, int height);
+    void UpdateSvgCache(int logicalWidth, int logicalHeight, int fbWidth, int fbHeight);
+    void Cleanup();
+    static void CursorPositionCallback(GLFWwindow *, double x, double y);
+    static void MouseButtonCallback(GLFWwindow *, int button, int action, int mods);
+    static void KeyCallback(GLFWwindow *, int key, int scancode, int action, int mods);
+    static void FocusCallback(GLFWwindow *, int focused);
+    int MapKeyNameToGLFW(const std::string &name);
+    void DrawBackground();
+    void DrawScreen();
+    bool IsControl(UIPoint point) const;
+    void RestoreWindowFrame();
+    void ResizeFloating(double factor);
+    GLFWwindow *window_ = nullptr;
+    GLuint texture_ = 0, backgroundTexture_ = 0;
     std::vector<uint16_t> framebuffer_;
-    int width_ = 0;
-    int height_ = 0;
-    int scale_ = 2;  // Scale factor for display
-    int rotation_ = 90;  // Rotation in degrees
+    int width_ = 0, height_ = 0, textureWidth_ = 0, textureHeight_ = 0;
+    int rotation_ = 90;
     bool dirty_ = false;
-    std::mutex framebufferMutex_;  // Protect framebuffer access
-
-    UIConfig uiConfig_;
-    int windowWidth_ = 0;
-    int windowHeight_ = 0;
-    uint8_t volumeValue_ = 128;  // 0-255, start at middle
+    std::mutex framebufferMutex_;
+    UIPoint cursorPosition_;
+    bool hasCursorPosition_ = false;
+    bool floating_ = false, dragging_ = false;
+    UIPoint dragOffset_;
+    UILayout uiConfig_;
+    UIPanelInput input_{uiConfig_};
+    std::unique_ptr<SvgBackgroundRenderer> svg_;
+    double artWidth_ = 0, artHeight_ = 0;
+    int cachedWidth_ = 0, cachedHeight_ = 0, pendingWidth_ = 0, pendingHeight_ = 0;
+    std::chrono::steady_clock::time_point resizeChanged_{};
 };

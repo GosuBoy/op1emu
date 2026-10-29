@@ -5,6 +5,13 @@ set(CMAKE_CXX_STANDARD 17)
 
 include(FetchContent)
 
+# OFF preserves the Rust-free PNG/headless build. ON fails explicitly if its
+# pinned dependency cannot be built; at runtime an invalid SVG falls back to PNG.
+option(OP1_ENABLE_SVG "Build the resvg 0.49.0 vector frontend" OFF)
+if(OP1_ENABLE_SVG)
+    include(cmake/Resvg.cmake)
+endif()
+
 # Fetch spdlog
 message(STATUS "Fetching spdlog...")
 FetchContent_Declare(
@@ -186,7 +193,19 @@ add_custom_target(op1-build-info
     BYPRODUCTS ${OP1_BUILD_INFO_H}
     COMMENT "Recording the build's revision")
 
+add_library(op1-svg gui/svg_background_renderer.cpp)
+target_include_directories(op1-svg PUBLIC gui)
+if(OP1_ENABLE_SVG)
+    target_compile_definitions(op1-svg PRIVATE OP1_HAVE_RESVG)
+    target_link_libraries(op1-svg PRIVATE op1-resvg)
+endif()
+
+add_library(op1-ui-layout gui/ui_layout.cpp)
+target_include_directories(op1-ui-layout PUBLIC gui)
+target_link_libraries(op1-ui-layout PRIVATE nlohmann_json::nlohmann_json)
+
 file(GLOB_RECURSE SOURCES gui/*.cpp)
+list(FILTER SOURCES EXCLUDE REGEX "/gui/(svg_background_renderer|ui_layout).cpp$")
 add_executable(op1emu ${SOURCES})
 add_dependencies(op1emu op1-build-info)
 target_include_directories(op1emu PRIVATE ${OP1_BUILD_INFO_DIR})
@@ -194,7 +213,7 @@ target_include_directories(op1emu PRIVATE ${OP1_BUILD_INFO_DIR})
 if(OP1_MIMALLOC)
     target_link_libraries(op1emu PRIVATE mimalloc-static)
 endif()
-target_link_libraries(op1emu PRIVATE emulator glfw OpenGL::GL nlohmann_json::nlohmann_json uvw ext Threads::Threads ${CMAKE_DL_LIBS})
+target_link_libraries(op1emu PRIVATE op1-svg op1-ui-layout emulator glfw OpenGL::GL nlohmann_json::nlohmann_json uvw ext Threads::Threads ${CMAKE_DL_LIBS})
 target_include_directories(op1emu PRIVATE ${stb_SOURCE_DIR} ${miniaudio_SOURCE_DIR})
 
 option(OP1_BUILD_HEADLESS_TESTS "Build headless frontend regressions" OFF)
@@ -299,4 +318,25 @@ if(OP1_BUILD_DMA_TESTS)
     add_executable(op1-display-dma-test tests/display_dma_test.cpp)
     target_link_libraries(op1-display-dma-test PRIVATE emulator)
     add_test(NAME op1-display-dma-test COMMAND op1-display-dma-test)
+endif()
+
+option(OP1_BUILD_UI_TESTS "Build firmware-free UI/rasterizer regressions and capture tools" OFF)
+if(OP1_BUILD_UI_TESTS)
+    enable_testing()
+    add_executable(op1-svg-renderer-test tests/svg_renderer_test.cpp)
+    target_link_libraries(op1-svg-renderer-test PRIVATE op1-svg)
+    target_compile_definitions(op1-svg-renderer-test PRIVATE OP1_TEST_DATA_DIR="${CMAKE_SOURCE_DIR}/tests/fixtures/svg")
+    add_test(NAME op1-svg-renderer-test COMMAND op1-svg-renderer-test)
+    add_executable(op1-ui-layout-test tests/ui_layout_test.cpp)
+    target_link_libraries(op1-ui-layout-test PRIVATE op1-ui-layout)
+    target_compile_definitions(op1-ui-layout-test PRIVATE OP1_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+    add_test(NAME op1-ui-layout-test COMMAND op1-ui-layout-test)
+    add_executable(op1-svg-render tools/svg_render.cpp)
+    target_link_libraries(op1-svg-render PRIVATE op1-svg)
+    target_include_directories(op1-svg-render PRIVATE ${stb_SOURCE_DIR})
+endif()
+if(OP1_BUILD_UI_TESTS)
+    add_executable(op1-ui-preview tools/ui_preview.cpp gui/glfw_display.cpp)
+    target_link_libraries(op1-ui-preview PRIVATE op1-svg op1-ui-layout glfw OpenGL::GL)
+    target_include_directories(op1-ui-preview PRIVATE gui src ${stb_SOURCE_DIR})
 endif()

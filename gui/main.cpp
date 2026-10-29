@@ -98,6 +98,7 @@ static int RunEmulator(int argc, char* argv[]) {
     // persistent-mode selector.
     bool nandSnapshot = false;
     bool headless = false;
+    bool floatingUI = false;
     bool deterministic = false;
     std::optional<long long> rtcEpoch;
     unsigned twiSpeedup = TWI::kDefaultSpeedup;
@@ -105,6 +106,7 @@ static int RunEmulator(int argc, char* argv[]) {
     bool help = false;
     bool options = true;
     std::string inputScript;
+    std::string uiConfig = "gui/ui.json";
     // Profiling options (profiling builds only; see docs/profiling.md).
     std::string profileMarks, profileTrace, profileCensus, perfFifo, perfWindow, profileUntil;
     std::string profileChecksum, profileChecksumEvery, profileChecksumFrom, profileDumpIr, profileDumpDir;
@@ -141,6 +143,13 @@ static int RunEmulator(int argc, char* argv[]) {
         if (options && arg == "--") options = false;
         else if (options && arg == "--nand-rw") nandSnapshot = false;
         else if (options && arg == "--nand-snapshot") nandSnapshot = true;
+        else if (options && arg == "--ui-config") {
+            if (++i == argc || !*argv[i]) throw std::runtime_error("--ui-config requires a path");
+            uiConfig = argv[i];
+        }
+        else if (options && arg == "--ui=svg") uiConfig = "gui/ui-svg.json";
+        else if (options && arg == "--ui=png") uiConfig = "gui/ui.json";
+        else if (options && arg == "--floating-ui") floatingUI = true;
         else if (options && arg == "--headless") headless = true;
         else if (options && arg == "--deterministic") deterministic = true;
         else if (options && arg == "--no-chain") noChain = true;
@@ -243,6 +252,11 @@ static int RunEmulator(int argc, char* argv[]) {
     if (help || positional.empty()) {
         std::cout << "Usage: " << argv[0]
                   << " <nand_flash_file> [ldr_file] [--nand-rw|--nand-snapshot]\n"
+                     "  --ui=svg|png          Select front panel (default: png)\n"
+                     "  --ui-config PATH      Custom panel configuration; errors fall back to PNG\n"
+                     "  --floating-ui         Experimental body-only window (use with --ui=svg)\n"
+                     "                        Drag the casing; Esc restores the title bar.\n"
+                     "                        Cmd/Ctrl + +/- resizes, M minimizes, W closes.\n"
                      "  --headless            No GLFW window or host audio device\n"
                      "  --input-script PATH   Read headless commands from PATH instead of stdin\n"
                      "  --deterministic       Run as fast as the host allows, not at the device's\n"
@@ -338,7 +352,7 @@ static int RunEmulator(int argc, char* argv[]) {
         keyboard = console;
         LogInfo("Headless mode: commands from %s", inputScript.empty() ? "stdin" : inputScript.c_str());
     } else {
-        window = std::make_shared<GLFWDisplay>();
+        window = std::make_shared<GLFWDisplay>(uiConfig, floatingUI);
         display = window;
         keyboard = window;
     }

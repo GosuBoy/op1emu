@@ -4,426 +4,453 @@
 #else
 #include <GL/gl.h>
 #endif
+#include <algorithm>
+#include <cmath>
 #include <cstring>
+#include <iostream>
 #include <stdexcept>
-#include <fstream>
-#include <nlohmann/json.hpp>
-
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 
-GLFWDisplay::GLFWDisplay() {
-    if (!glfwInit()) {
+GLFWDisplay::GLFWDisplay(const std::string &configPath, bool floating) : floating_(floating) {
+    if (!glfwInit())
         throw std::runtime_error("Failed to initialize GLFW");
+    try {
+        glfwDefaultWindowHints();
+        if (floating_) {
+            glfwWindowHint(GLFW_DECORATED, GLFW_FALSE);
+            glfwWindowHint(GLFW_TRANSPARENT_FRAMEBUFFER, GLFW_TRUE);
+            glfwWindowHint(GLFW_ALPHA_BITS, 8);
+        }
+        window_ = glfwCreateWindow(640, 480, "OP1 Emulator", nullptr, nullptr);
+        if (!window_ && floating_) {
+            std::cerr << "Floating window creation failed; using a standard window\n";
+            floating_ = false;
+            glfwDefaultWindowHints();
+            window_ = glfwCreateWindow(640, 480, "OP1 Emulator", nullptr, nullptr);
+        }
+        if (!window_)
+            throw std::runtime_error("Failed to create GLFW window");
+        glfwMakeContextCurrent(window_);
+        glfwSwapInterval(1);
+        glfwSetWindowUserPointer(window_, this);
+        glfwSetMouseButtonCallback(window_, MouseButtonCallback);
+        glfwSetCursorPosCallback(window_, CursorPositionCallback);
+        glfwSetKeyCallback(window_, KeyCallback);
+        glfwSetWindowFocusCallback(window_, FocusCallback);
+        input_.event = [this](int bank, int pin, bool pressed) {
+            if (keyEventCallback)
+                keyEventCallback(bank, pin, pressed);
+        };
+        try {
+            LoadPanel(configPath);
+        } catch (const std::exception &e) {
+            if (configPath == "gui/ui.json")
+                throw;
+            std::cerr << "UI config failed: " << e.what() << "; falling back to gui/ui.json\n";
+            LoadPanel("gui/ui.json");
+        }
+        glfwSetWindowSize(window_, std::max(1, int(artWidth_ * uiConfig_.scale)),
+                          std::max(1, int(artHeight_ * uiConfig_.scale)));
+        if (floating_) {
+            if (!svg_ || !glfwGetWindowAttrib(window_, GLFW_TRANSPARENT_FRAMEBUFFER)) {
+                std::cerr << "Floating UI needs SVG artwork and desktop transparency; using a standard window\n";
+                RestoreWindowFrame();
+            } else {
+                glfwSetWindowAspectRatio(window_, std::max(1, int(std::lround(artWidth_))),
+                                         std::max(1, int(std::lround(artHeight_))));
+            }
+        }
+    } catch (...) {
+        Cleanup();
+        throw;
     }
-    LoadUIConfig("gui/ui.json");
-
-    window_ = glfwCreateWindow(640, 480, "OP1 Emulator", nullptr, nullptr);
-    if (!window_) {
-        throw std::runtime_error("Failed to create GLFW window");
-    }
-
-    glfwMakeContextCurrent(window_);
-    glfwSwapInterval(1);
-
-    // Set up mouse button callback
-    glfwSetWindowUserPointer(window_, this);
-    glfwSetMouseButtonCallback(window_, MouseButtonCallback);
-    glfwSetKeyCallback(window_, KeyCallback);
-
-    backgroundTexture_ = LoadBackgroundTexture(uiConfig_.background, windowWidth_, windowHeight_);
-    windowWidth_ = static_cast<int>(windowWidth_ * uiConfig_.scale);
-    windowHeight_ = static_cast<int>(windowHeight_ * uiConfig_.scale);
-    glfwSetWindowSize(window_, windowWidth_, windowHeight_);
 }
-
-GLFWDisplay::~GLFWDisplay() {
-    if (texture_) {
-        glDeleteTextures(1, &texture_);
-    }
+void GLFWDisplay::Cleanup() {
     if (window_) {
+        glfwMakeContextCurrent(window_);
+        if (texture_)
+            glDeleteTextures(1, &texture_);
+        if (backgroundTexture_)
+            glDeleteTextures(1, &backgroundTexture_);
         glfwDestroyWindow(window_);
+        window_ = nullptr;
     }
     glfwTerminate();
 }
-
-void GLFWDisplay::Initialize(int rows, int lines) {
-    width_ = rows;
-    height_ = lines;
-
-    framebuffer_.resize(width_ * height_, 0);
-}
-
-void GLFWDisplay::LoadUIConfig(const std::string& path) {
-    std::ifstream file(path);
-    if (!file.is_open()) {
-        throw std::runtime_error("Failed to open UI config: " + path);
-    }
-
-    nlohmann::json j;
-    file >> j;
-
-    uiConfig_.background = j["background"];
-    uiConfig_.scale = j["scale"];
-    uiConfig_.display.left = int(int(j["display"]["left"]) * uiConfig_.scale);
-    uiConfig_.display.top = int(int(j["display"]["top"]) * uiConfig_.scale);
-    uiConfig_.display.width = int(int(j["display"]["width"]) * uiConfig_.scale);
-    uiConfig_.display.height = int(int(j["display"]["height"]) * uiConfig_.scale);
-
-    // Parse volume knob
-    if (j.contains("volume_knob")) {
-        auto& vk = j["volume_knob"];
-        auto& cw = vk["clockwise"];
-        auto& ccw = vk["counter_clockwise"];
-        uiConfig_.volumeKnob.clockwiseLeft = int(int(cw[0]) * uiConfig_.scale);
-        uiConfig_.volumeKnob.clockwiseTop = int(int(cw[1]) * uiConfig_.scale);
-        uiConfig_.volumeKnob.clockwiseWidth = int(int(cw[2]) * uiConfig_.scale);
-        uiConfig_.volumeKnob.clockwiseHeight = int(int(cw[3]) * uiConfig_.scale);
-        uiConfig_.volumeKnob.counterClockwiseLeft = int(int(ccw[0]) * uiConfig_.scale);
-        uiConfig_.volumeKnob.counterClockwiseTop = int(int(ccw[1]) * uiConfig_.scale);
-        uiConfig_.volumeKnob.counterClockwiseWidth = int(int(ccw[2]) * uiConfig_.scale);
-        uiConfig_.volumeKnob.counterClockwiseHeight = int(int(ccw[3]) * uiConfig_.scale);
-    }
-
-    // Parse buttons
-    if (j.contains("buttons")) {
-        for (auto& [name, btn] : j["buttons"].items()) {
-            ButtonConfig button;
-            button.name = name;
-            auto&& pos = btn["position"];
-            button.left = int(int(pos[0]) * uiConfig_.scale);
-            button.top = int(int(pos[1]) * uiConfig_.scale);
-            button.width = int(int(pos[2]) * uiConfig_.scale);
-            button.height = int(int(pos[3]) * uiConfig_.scale);
-            auto&& gpio = btn["gpio"];
-            button.bank = gpio[0];
-            button.index = gpio[1];
-            uiConfig_.buttons.push_back(button);
-        }
-    }
-
-    // Parse keycaps
-    if (j.contains("keycaps")) {
-        for (auto& [name, key] : j["keycaps"].items()) {
-            KeycapConfig keycap;
-            keycap.name = name;
-            keycap.bank = key[0];
-            keycap.index = key[1];
-            keycap.glfwKey = MapKeyNameToGLFW(name);
-            uiConfig_.keycaps.push_back(keycap);
-        }
-    }
-
-    // Parse encoders
-    if (j.contains("encoders")) {
-        for (auto& [name, enc] : j["encoders"].items()) {
-            ButtonConfig clockwise;
-            ButtonConfig counterClockwise;
-            auto& cw = enc["clockwise"];
-            auto& ccw = enc["counter_clockwise"];
-            clockwise.left = int(int(cw[0]) * uiConfig_.scale);
-            clockwise.top = int(int(cw[1]) * uiConfig_.scale);
-            clockwise.width = int(int(cw[2]) * uiConfig_.scale);
-            clockwise.height = int(int(cw[3]) * uiConfig_.scale);
-            counterClockwise.left = int(int(ccw[0]) * uiConfig_.scale);
-            counterClockwise.top = int(int(ccw[1]) * uiConfig_.scale);
-            counterClockwise.width = int(int(ccw[2]) * uiConfig_.scale);
-            counterClockwise.height = int(int(ccw[3]) * uiConfig_.scale);
-            auto& cw_gpio = enc["clockwise_gpio"];
-            clockwise.bank = cw_gpio[0];
-            clockwise.index = cw_gpio[1];
-            auto& ccw_gpio = enc["counter_clockwise_gpio"];
-            counterClockwise.bank = ccw_gpio[0];
-            counterClockwise.index = ccw_gpio[1];
-            uiConfig_.encoders.push_back(std::make_tuple(clockwise, counterClockwise, 0));
-        }
-    }
-}
-
-GLuint GLFWDisplay::LoadBackgroundTexture(const std::string& path, int& width, int& height) {
-    int channels;
-    std::string fullPath = "gui/" + path;
-    unsigned char* data = stbi_load(fullPath.c_str(), &width, &height, &channels, 4);
-    if (!data) {
-        throw std::runtime_error("Failed to load background image: " + fullPath);
-    }
-
-    GLuint texture;
-    glGenTextures(1, &texture);
-    glBindTexture(GL_TEXTURE_2D, texture);
+GLFWDisplay::~GLFWDisplay() { Cleanup(); }
+void GLFWDisplay::UploadBackground(const uint8_t *data, int width, int height) {
+    GLint limit;
+    glGetIntegerv(GL_MAX_TEXTURE_SIZE, &limit);
+    if (width > limit || height > limit)
+        throw std::runtime_error("Background exceeds GL texture size");
+    glPushAttrib(GL_TEXTURE_BIT);
+    glPushClientAttrib(GL_CLIENT_PIXEL_STORE_BIT);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+    glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+    glPixelStorei(GL_UNPACK_SKIP_ROWS, 0);
+    glPixelStorei(GL_UNPACK_SKIP_PIXELS, 0);
+    glPixelStorei(GL_UNPACK_SWAP_BYTES, GL_FALSE);
+    if (!backgroundTexture_)
+        glGenTextures(1, &backgroundTexture_);
+    glBindTexture(GL_TEXTURE_2D, backgroundTexture_);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
-
-    stbi_image_free(data);
-    return texture;
+    glPopClientAttrib();
+    glPopAttrib();
 }
-
-void GLFWDisplay::CreateTexture() {
-    glGenTextures(1, &texture_);
-    glBindTexture(GL_TEXTURE_2D, texture_);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
-
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width_, height_, 0,
-                 GL_RGB, GL_UNSIGNED_SHORT_5_6_5, framebuffer_.data());
-}
-
-void GLFWDisplay::UpdateRowBuffer(int x, int y, const void* data, int length) {
-    if (y < 0 || y >= height_ || x < 0) return;
-
-    int pixelsToCopy = length / sizeof(uint16_t);
-    if (x + pixelsToCopy > width_) {
-        pixelsToCopy = width_ - x;
+void GLFWDisplay::LoadPanel(const std::string &path) {
+    auto config = UILayout::Load(path);
+    std::unique_ptr<SvgBackgroundRenderer> svg;
+    if (config.svg) {
+        svg = std::make_unique<SvgBackgroundRenderer>(config.background);
+        auto pixels = svg->Render(uint32_t(std::ceil(svg->Width())), uint32_t(std::ceil(svg->Height())));
+        UploadBackground(pixels.rgba.data(), pixels.width, pixels.height);
+        artWidth_ = svg->Width();
+        artHeight_ = svg->Height();
+        cachedWidth_ = pixels.width;
+        cachedHeight_ = pixels.height;
+    } else {
+        int width, height, channels;
+        std::unique_ptr<stbi_uc, decltype(&stbi_image_free)> data(
+            stbi_load(config.background.c_str(), &width, &height, &channels, 4), stbi_image_free);
+        if (!data)
+            throw std::runtime_error("Cannot load PNG: " + config.background);
+        UploadBackground(data.get(), width, height);
+        artWidth_ = width;
+        artHeight_ = height;
     }
-
-    if (pixelsToCopy > 0) {
-        std::lock_guard<std::mutex> lock(framebufferMutex_);
-        std::memcpy(&framebuffer_[y * width_ + x], data, pixelsToCopy * sizeof(uint16_t));
+    uiConfig_ = std::move(config);
+    svg_ = std::move(svg);
+}
+void GLFWDisplay::Initialize(int rows, int lines) {
+    if (rows <= 0 || lines <= 0 || rows > 8192 || lines > 8192)
+        throw std::runtime_error("Invalid framebuffer size");
+    std::lock_guard<std::mutex> lock(framebufferMutex_);
+    if (rows == width_ && lines == height_)
+        return;
+    width_ = rows;
+    height_ = lines;
+    framebuffer_.assign(size_t(rows) * lines, 0);
+    dirty_ = true;
+}
+void GLFWDisplay::UpdateRowBuffer(int x, int y, const void *data, int length) {
+    std::lock_guard<std::mutex> lock(framebufferMutex_);
+    if (!data || length <= 0 || y < 0 || y >= height_ || x < 0 || x >= width_)
+        return;
+    const int pixels = std::min(length / int(sizeof(uint16_t)), width_ - x);
+    if (pixels > 0) {
+        std::memcpy(framebuffer_.data() + size_t(y) * width_ + x, data, size_t(pixels) * 2);
         dirty_ = true;
     }
 }
-
-void GLFWDisplay::DrawTexturedQuad(GLuint texture, float x, float y, float w, float h, float texW, float texH) {
-    glBindTexture(GL_TEXTURE_2D, texture);
+void GLFWDisplay::UpdateSvgCache(int lw, int lh, int fw, int fh) {
+    if (!svg_)
+        return;
+    const auto fit = UIFit::Into(artWidth_, artHeight_, lw, lh);
+    double w = artWidth_ * fit.scale * fw / lw, h = artHeight_ * fit.scale * fh / lh;
+    GLint maxTexture;
+    glGetIntegerv(GL_MAX_TEXTURE_SIZE, &maxTexture);
+    const double limit = std::min(8192, maxTexture);
+    double reduction = std::min({1.0, limit / w, limit / h, std::sqrt((16.0 * 1024 * 1024) / (w * h))});
+    const int targetWidth = std::max(1, int(std::floor(w * reduction))),
+              targetHeight = std::max(1, int(std::floor(h * reduction)));
+    if (cachedWidth_ == targetWidth && cachedHeight_ == targetHeight)
+        return;
+    const auto now = std::chrono::steady_clock::now();
+    if (targetWidth != pendingWidth_ || targetHeight != pendingHeight_) {
+        pendingWidth_ = targetWidth;
+        pendingHeight_ = targetHeight;
+        resizeChanged_ = now;
+        return;
+    }
+    if (now - resizeChanged_ < std::chrono::milliseconds(120))
+        return;
+    try {
+        auto pixels = svg_->Render(targetWidth, targetHeight);
+        UploadBackground(pixels.rgba.data(), targetWidth, targetHeight);
+        cachedWidth_ = targetWidth;
+        cachedHeight_ = targetHeight;
+    } catch (const std::exception &e) {
+        std::cerr << "SVG resize failed: " << e.what() << "; keeping cached texture\n";
+        // Avoid retrying expensive filters every frame after a failed allocation.
+        cachedWidth_ = targetWidth;
+        cachedHeight_ = targetHeight;
+    }
+}
+void GLFWDisplay::DrawBackground() {
+    glBlendFunc(svg_ ? GL_ONE : GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glBindTexture(GL_TEXTURE_2D, backgroundTexture_);
     glBegin(GL_QUADS);
-    glTexCoord2f(0, 0);    glVertex2f(x, y);
-    glTexCoord2f(texW, 0); glVertex2f(x + w, y);
-    glTexCoord2f(texW, texH); glVertex2f(x + w, y + h);
-    glTexCoord2f(0, texH); glVertex2f(x, y + h);
+    glTexCoord2f(0, 0);
+    glVertex2d(0, 0);
+    glTexCoord2f(1, 0);
+    glVertex2d(artWidth_, 0);
+    glTexCoord2f(1, 1);
+    glVertex2d(artWidth_, artHeight_);
+    glTexCoord2f(0, 1);
+    glVertex2d(0, artHeight_);
     glEnd();
 }
-
-void GLFWDisplay::RenderFramebuffer() {
-    if (!window_) return;
-
-    glfwMakeContextCurrent(window_);
-
-    if (dirty_) {
-        std::lock_guard<std::mutex> lock(framebufferMutex_);
-        if (texture_ == 0) {
-            CreateTexture();
-        }
+void GLFWDisplay::DrawScreen() {
+    // Map the portrait DMA texture to TL/TR/BR/BL in landscape. Homogeneous
+    // vertices give perspective-correct interpolation for non-affine quads.
+    const auto matrix = UIScreenMatrix(uiConfig_.screen);
+    glPushMatrix();
+    glMultMatrixd(matrix.data());
+    glDisable(GL_BLEND); // firmware RGB565 is opaque, independent of SVG alpha
+    if (texture_) {
+        glEnable(GL_TEXTURE_2D);
         glBindTexture(GL_TEXTURE_2D, texture_);
-        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width_, height_,
-                        GL_RGB, GL_UNSIGNED_SHORT_5_6_5, framebuffer_.data());
-        dirty_ = false;
+        const GLint filter = uiConfig_.screenFilter == UIScreenFilter::Linear ? GL_LINEAR : GL_NEAREST;
+        // Apply at draw time: a panel switch must work even without a new
+        // firmware frame. PNG/custom layouts keep nearest unless opted in.
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, filter);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, filter);
+    } else {
+        glDisable(GL_TEXTURE_2D);
+        glColor4f(0, 0, 0, 1);
     }
-
-    int fbWidth, fbHeight;
-    glfwGetFramebufferSize(window_, &fbWidth, &fbHeight);
-    glViewport(0, 0, fbWidth, fbHeight);
-
+    constexpr double pi = 3.14159265358979323846;
+    const double c = std::cos(rotation_ * pi / 180), s = std::sin(rotation_ * pi / 180);
+    const std::array<UIPoint, 4> corners = {UIPoint{0, 0}, {1, 0}, {1, 1}, {0, 1}};
+    glBegin(GL_QUADS);
+    for (auto p : corners) {
+        const double x = p.x - .5, y = p.y - .5;
+        glTexCoord2d(c * x + s * y + .5, -s * x + c * y + .5);
+        glVertex2d(p.x, p.y);
+    }
+    glEnd();
+    glColor4f(1, 1, 1, 1);
+    glPopMatrix();
+}
+void GLFWDisplay::RenderFramebuffer(bool present) {
+    if (!window_)
+        return;
+    glfwMakeContextCurrent(window_);
+    int fw, fh, lw, lh;
+    glfwGetFramebufferSize(window_, &fw, &fh);
+    glfwGetWindowSize(window_, &lw, &lh);
+    if (fw <= 0 || fh <= 0 || lw <= 0 || lh <= 0)
+        return; // minimized
+    UpdateSvgCache(lw, lh, fw, fh);
+    // The compatibility context is owned by this frontend. Restore its GL
+    // state so premultiplied SVG state never leaks into PNG or display upload.
+    GLint matrixMode;
+    glGetIntegerv(GL_MATRIX_MODE, &matrixMode);
+    glPushAttrib(GL_ALL_ATTRIB_BITS);
+    glPushClientAttrib(GL_CLIENT_PIXEL_STORE_BIT);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+    glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+    glPixelStorei(GL_UNPACK_SKIP_ROWS, 0);
+    glPixelStorei(GL_UNPACK_SKIP_PIXELS, 0);
+    glPixelStorei(GL_UNPACK_SWAP_BYTES, GL_FALSE); // RGB565 rows may be an odd width
+    {
+        std::lock_guard<std::mutex> lock(framebufferMutex_);
+        if (dirty_) {
+            if (!texture_)
+                glGenTextures(1, &texture_);
+            glBindTexture(GL_TEXTURE_2D, texture_);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+            if (textureWidth_ != width_ || textureHeight_ != height_) {
+                glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width_, height_, 0, GL_RGB, GL_UNSIGNED_SHORT_5_6_5,
+                             framebuffer_.data());
+                textureWidth_ = width_;
+                textureHeight_ = height_;
+            } else
+                glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width_, height_, GL_RGB, GL_UNSIGNED_SHORT_5_6_5,
+                                framebuffer_.data());
+            dirty_ = false;
+        }
+    }
+    glViewport(0, 0, fw, fh);
+    if (floating_)
+        glClearColor(0, 0, 0, 0);
+    else
+        glClearColor(.12f, .12f, .12f, 1);
     glClear(GL_COLOR_BUFFER_BIT);
-
-    // Set up orthographic projection for pixel-perfect rendering
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_CULL_FACE);
+    glDisable(GL_LIGHTING);
     glMatrixMode(GL_PROJECTION);
+    glPushMatrix();
     glLoadIdentity();
-    glOrtho(0, windowWidth_, windowHeight_, 0, -1, 1);
+    glOrtho(0, lw, lh, 0, -1, 1);
     glMatrixMode(GL_MODELVIEW);
+    glPushMatrix();
     glLoadIdentity();
-
+    const auto fit = UIFit::Into(artWidth_, artHeight_, lw, lh);
+    glTranslated(fit.x, fit.y, 0);
+    glScaled(fit.scale, fit.scale, 1);
+    glColor4f(1, 1, 1, 1);
     glEnable(GL_TEXTURE_2D);
     glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-
-    // Draw background
-    if (backgroundTexture_) {
-        DrawTexturedQuad(backgroundTexture_, 0, 0, windowWidth_, windowHeight_);
-    }
-
-    // Draw display framebuffer in the designated area with rotation
-    if (texture_) {
-        glPushMatrix();
-
-        // Calculate center of display area
-        float centerX = uiConfig_.display.left + uiConfig_.display.width / 2.0f;
-        float centerY = uiConfig_.display.top + uiConfig_.display.height / 2.0f;
-
-        // Translate to center, rotate, translate back
-        glTranslatef(centerX, centerY, 0);
-        glRotatef(rotation_, 0, 0, 1);
-
-        // Swap width and height for 90° and 270° rotations
-        float drawWidth = uiConfig_.display.width;
-        float drawHeight = uiConfig_.display.height;
-        if (rotation_ == 90 || rotation_ == 270) {
-            std::swap(drawWidth, drawHeight);
-        }
-
-        glTranslatef(-drawWidth / 2.0f, -drawHeight / 2.0f, 0);
-        DrawTexturedQuad(texture_, 0, 0, drawWidth, drawHeight);
-        glPopMatrix();
-    }
-
-    glDisable(GL_BLEND);
-    glDisable(GL_TEXTURE_2D);
-
-    glfwSwapBuffers(window_);
+    DrawBackground();
+    DrawScreen();
+    glPopMatrix();
+    glMatrixMode(GL_PROJECTION);
+    glPopMatrix();
+    glMatrixMode(matrixMode);
+    glPopClientAttrib();
+    glPopAttrib();
+    if (present)
+        glfwSwapBuffers(window_);
 }
-
 void GLFWDisplay::PollEvents() {
     glfwPollEvents();
     RenderFramebuffer();
 }
-
-bool GLFWDisplay::ShouldClose() const {
-    return window_ && glfwWindowShouldClose(window_);
-}
-
+bool GLFWDisplay::ShouldClose() const { return window_ && glfwWindowShouldClose(window_); }
 void GLFWDisplay::SwapBuffers() {
-    if (window_) {
+    if (window_)
         glfwSwapBuffers(window_);
+}
+void GLFWDisplay::SetDisplayRotation(int degrees) { rotation_ = (degrees % 360 + 360) % 360; }
+bool GLFWDisplay::IsControl(UIPoint point) const {
+    for (const auto &b : uiConfig_.buttons)
+        if (b.region.Contains(point))
+            return true;
+    for (const auto &e : uiConfig_.encoders)
+        if (e.clockwise.Contains(point) || e.counterClockwise.Contains(point))
+            return true;
+    return uiConfig_.volumeUp.Contains(point) || uiConfig_.volumeDown.Contains(point);
+}
+void GLFWDisplay::RestoreWindowFrame() {
+    floating_ = dragging_ = false;
+    glfwSetWindowAttrib(window_, GLFW_DECORATED, GLFW_TRUE);
+    glfwSetWindowAspectRatio(window_, GLFW_DONT_CARE, GLFW_DONT_CARE);
+}
+void GLFWDisplay::ResizeFloating(double factor) {
+    int width, height;
+    glfwGetWindowSize(window_, &width, &height);
+    const int base = std::max(4, int(std::lround(artWidth_ * uiConfig_.scale)));
+    width = std::clamp(int(std::lround(width * factor)), base / 4, base * 3);
+    height = std::max(1, int(std::lround(width * artHeight_ / artWidth_)));
+    glfwSetWindowSize(window_, width, height);
+}
+void GLFWDisplay::CursorPositionCallback(GLFWwindow *w, double x, double y) {
+    auto *self = static_cast<GLFWDisplay *>(glfwGetWindowUserPointer(w));
+    self->cursorPosition_ = {x, y};
+    self->hasCursorPosition_ = true;
+    if (self->dragging_) {
+        int wx, wy;
+        glfwGetWindowPos(w, &wx, &wy);
+        glfwSetWindowPos(w, wx + int(std::lround(x - self->dragOffset_.x)),
+                         wy + int(std::lround(y - self->dragOffset_.y)));
     }
 }
-
-void GLFWDisplay::SetDisplayRotation(int degrees) {
-    rotation_ = degrees % 360;
-    if (rotation_ < 0) rotation_ += 360;
-}
-
-void GLFWDisplay::MouseButtonCallback(GLFWwindow* window, int button, int action, int mods) {
-    auto* display = static_cast<GLFWDisplay*>(glfwGetWindowUserPointer(window));
-    if (display) {
-        double xpos, ypos;
-        glfwGetCursorPos(window, &xpos, &ypos);
-        display->HandleMouseButton(button, action, xpos, ypos);
+void GLFWDisplay::MouseButtonCallback(GLFWwindow *w, int button, int action, int) {
+    if (button != GLFW_MOUSE_BUTTON_LEFT || (action != GLFW_PRESS && action != GLFW_RELEASE))
+        return;
+    auto *self = static_cast<GLFWDisplay *>(glfwGetWindowUserPointer(w));
+    double x, y;
+    int width, height;
+    // Native/remote event coordinates can differ from a global cursor query
+    // (notably macOS window sharing). Prefer the latest GLFW cursor event.
+    if (self->hasCursorPosition_) {
+        x = self->cursorPosition_.x;
+        y = self->cursorPosition_.y;
+    } else {
+        glfwGetCursorPos(w, &x, &y);
+    }
+    glfwGetWindowSize(w, &width, &height);
+    if (action == GLFW_RELEASE) {
+        self->dragging_ = false;
+        self->input_.Mouse(false, {});
+    } else if (width > 0 && height > 0) {
+        const auto point = UIFit::Into(self->artWidth_, self->artHeight_, width, height).ToArt({x, y});
+        if (self->floating_ && point.x >= 0 && point.y >= 0 && point.x <= self->artWidth_ &&
+            point.y <= self->artHeight_ && !self->IsControl(point)) {
+            self->dragging_ = true;
+            self->dragOffset_ = {x, y};
+        } else
+            self->input_.Mouse(true, point);
     }
 }
-
-void GLFWDisplay::HandleMouseButton(int button, int action, double x, double y) {
-    if (button != GLFW_MOUSE_BUTTON_LEFT) return;
-
-    // Only handle press events for volume knob
-    if (action == GLFW_PRESS) {
-        // Check clockwise area
-        if (x >= uiConfig_.volumeKnob.clockwiseLeft &&
-            x < uiConfig_.volumeKnob.clockwiseLeft + uiConfig_.volumeKnob.clockwiseWidth &&
-            y >= uiConfig_.volumeKnob.clockwiseTop &&
-            y < uiConfig_.volumeKnob.clockwiseTop + uiConfig_.volumeKnob.clockwiseHeight) {
-            // Increase volume
-            if (volumeValue_ < 255) {
-                if (volumeValue_ > 250) {
-                    volumeValue_ = 255;
-                } else {
-                    volumeValue_ += 5;
-                }
-            }
+void GLFWDisplay::KeyCallback(GLFWwindow *w, int key, int, int action, int mods) {
+    if (action != GLFW_PRESS && action != GLFW_RELEASE)
+        return;
+    auto *self = static_cast<GLFWDisplay *>(glfwGetWindowUserPointer(w));
+    if (self->floating_ && action == GLFW_PRESS) {
+        if (key == GLFW_KEY_ESCAPE) {
+            self->RestoreWindowFrame();
             return;
         }
-        // Check counter-clockwise area
-        if (x >= uiConfig_.volumeKnob.counterClockwiseLeft &&
-            x < uiConfig_.volumeKnob.counterClockwiseLeft + uiConfig_.volumeKnob.counterClockwiseWidth &&
-            y >= uiConfig_.volumeKnob.counterClockwiseTop &&
-            y < uiConfig_.volumeKnob.counterClockwiseTop + uiConfig_.volumeKnob.counterClockwiseHeight) {
-            // Decrease volume
-            if (volumeValue_ > 0) {
-                if (volumeValue_ < 5) {
-                    volumeValue_ = 0;  // Handle underflow
-                } else {
-                    volumeValue_ -= 5;
-                }
+        if (mods & (GLFW_MOD_SUPER | GLFW_MOD_CONTROL)) {
+            if (key == GLFW_KEY_W) {
+                glfwSetWindowShouldClose(w, GLFW_TRUE);
+                return;
             }
-            return;
-        }
-    }
-
-    // Check if click is within any button
-    for (const auto& btn : uiConfig_.buttons) {
-        if (x >= btn.left && x < btn.left + btn.width &&
-            y >= btn.top && y < btn.top + btn.height) {
-            if (action == GLFW_PRESS) {
-                OnKeyPressed(btn.bank, btn.index);
-            } else if (action == GLFW_RELEASE) {
-                OnKeyReleased(btn.bank, btn.index);
+            if (key == GLFW_KEY_M) {
+                glfwIconifyWindow(w);
+                return;
+            }
+            if (key == GLFW_KEY_EQUAL || key == GLFW_KEY_KP_ADD) {
+                self->ResizeFloating(1.1);
+                return;
+            }
+            if (key == GLFW_KEY_MINUS || key == GLFW_KEY_KP_SUBTRACT) {
+                self->ResizeFloating(1 / 1.1);
+                return;
             }
         }
     }
-
-    // Check if click is within any encoder areas
-    constexpr const int encoder_sequences[] = {0, 2, 3, 1};
-    for (auto& [cw, ccw, index] : uiConfig_.encoders) {
-        auto newIndex = index;
-        // Clockwise
-        if (x >= cw.left && x < cw.left + cw.width &&
-            y >= cw.top && y < cw.top + cw.height) {
-            if (action == GLFW_PRESS) {
-                newIndex = (index + 1) % (sizeof(encoder_sequences)/sizeof(encoder_sequences[0]));
-            }
-        }
-        // Counter-clockwise
-        if (x >= ccw.left && x < ccw.left + ccw.width &&
-            y >= ccw.top && y < ccw.top + ccw.height) {
-            if (action == GLFW_PRESS) {
-                newIndex = (index - 1) % (sizeof(encoder_sequences)/sizeof(encoder_sequences[0]));
-            }
-        }
-        if (newIndex != index) {
-            int value = encoder_sequences[newIndex];
-            if (value & 2) {
-                OnKeyPressed(cw.bank, cw.index);
-            } else {
-                OnKeyReleased(cw.bank, cw.index);
-            }
-            if (value & 1) {
-                OnKeyPressed(ccw.bank, ccw.index);
-            } else {
-                OnKeyReleased(ccw.bank, ccw.index);
-            }
-            index = newIndex;
-        }
-    }
-}
-
-void GLFWDisplay::KeyCallback(GLFWwindow* window, int key, int scancode, int action, int mods) {
-    if (action != GLFW_PRESS && action != GLFW_RELEASE) return;
-    auto* display = static_cast<GLFWDisplay*>(glfwGetWindowUserPointer(window));
-    if (display) {
-        display->HandleKeyboard(key, action);
-    }
-}
-
-void GLFWDisplay::HandleKeyboard(int key, int action) {
-    if (action != GLFW_PRESS && action != GLFW_RELEASE) return;
-
-    // Check if key matches any keycap
-    for (const auto& keycap : uiConfig_.keycaps) {
-        if (key == keycap.glfwKey) {
-            if (action == GLFW_PRESS) {
-                OnKeyPressed(keycap.bank, keycap.index);
-            } else if (action == GLFW_RELEASE) {
-                OnKeyReleased(keycap.bank, keycap.index);
-            }
+    for (auto &k : self->uiConfig_.keys)
+        if (key == self->MapKeyNameToGLFW(k.name)) {
+            self->input_.Key(key, k.gpio, action == GLFW_PRESS);
             break;
         }
+}
+void GLFWDisplay::FocusCallback(GLFWwindow *w, int focused) {
+    if (!focused) {
+        auto *self = static_cast<GLFWDisplay *>(glfwGetWindowUserPointer(w));
+        self->input_.ReleaseAll();
+        self->hasCursorPosition_ = false;
+        self->dragging_ = false;
     }
 }
-
-int GLFWDisplay::MapKeyNameToGLFW(const std::string& keyName) {
+int GLFWDisplay::MapKeyNameToGLFW(const std::string &keyName) {
     // Map common key names to GLFW key codes
-    if (keyName == "shift") return GLFW_KEY_LEFT_SHIFT;
-    if (keyName == "ctrl" || keyName == "control") return GLFW_KEY_LEFT_CONTROL;
-    if (keyName == "alt") return GLFW_KEY_LEFT_ALT;
-    if (keyName == "space") return GLFW_KEY_SPACE;
-    if (keyName == "enter" || keyName == "return") return GLFW_KEY_ENTER;
-    if (keyName == "tab") return GLFW_KEY_TAB;
-    if (keyName == "escape" || keyName == "esc") return GLFW_KEY_ESCAPE;
-    if (keyName == "backspace") return GLFW_KEY_BACKSPACE;
+    if (keyName == "shift")
+        return GLFW_KEY_LEFT_SHIFT;
+    if (keyName == "ctrl" || keyName == "control")
+        return GLFW_KEY_LEFT_CONTROL;
+    if (keyName == "alt")
+        return GLFW_KEY_LEFT_ALT;
+    if (keyName == "space")
+        return GLFW_KEY_SPACE;
+    if (keyName == "enter" || keyName == "return")
+        return GLFW_KEY_ENTER;
+    if (keyName == "tab")
+        return GLFW_KEY_TAB;
+    if (keyName == "escape" || keyName == "esc")
+        return GLFW_KEY_ESCAPE;
+    if (keyName == "backspace")
+        return GLFW_KEY_BACKSPACE;
 
     // Arrow keys
-    if (keyName == "up") return GLFW_KEY_UP;
-    if (keyName == "down") return GLFW_KEY_DOWN;
-    if (keyName == "left") return GLFW_KEY_LEFT;
-    if (keyName == "right") return GLFW_KEY_RIGHT;
+    if (keyName == "up")
+        return GLFW_KEY_UP;
+    if (keyName == "down")
+        return GLFW_KEY_DOWN;
+    if (keyName == "left")
+        return GLFW_KEY_LEFT;
+    if (keyName == "right")
+        return GLFW_KEY_RIGHT;
 
     // Single character keys (a-z, 0-9)
     if (keyName.length() == 1) {
         char c = keyName[0];
-        if (c >= 'a' && c <= 'z') return GLFW_KEY_A + (c - 'a');
-        if (c >= 'A' && c <= 'Z') return GLFW_KEY_A + (c - 'A');
-        if (c >= '0' && c <= '9') return GLFW_KEY_0 + (c - '0');
+        if (c >= 'a' && c <= 'z')
+            return GLFW_KEY_A + (c - 'a');
+        if (c >= 'A' && c <= 'Z')
+            return GLFW_KEY_A + (c - 'A');
+        if (c >= '0' && c <= '9')
+            return GLFW_KEY_0 + (c - '0');
     }
 
     // Default: return the key name as-is if it's already a valid GLFW key code
