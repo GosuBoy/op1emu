@@ -20,4 +20,34 @@ DMA ISR entry, renderer execution and DMA submission, each with a minimum
 no guest artifact fields or capture timestamps are rewritten or excluded.
 
 See the [supported contract and reproduction commands](deterministic-debugger.md).
-Commit-bound CI and artifact receipts follow after branch validation.
+
+## Commit-bound CI and artifact evidence
+
+Implementation [c662f1901abb96e4c7a12b6b7766f3ee92f90bc1](https://github.com/GosuBoy/op1emu/commit/c662f1901abb96e4c7a12b6b7766f3ee92f90bc1)
+passed [CI 40914921454](https://github.com/GosuBoy/op1emu/actions/runs/40914921454)
+in all six jobs: Linux OFF 38/38, Linux ON 41/41, macOS 38/38, ten unchanged
+Blackfin fixture images, Python 15+183 tests and the libc++ time contract.
+
+The subsequent [test hardening](https://github.com/GosuBoy/op1emu/commit/373096e950c475c1a7872fd42e8d6091abb2c8ac)
+adds explicit zero hook/settlement-callback assertions and complete-line
+response parsing. Its emulator/debugger implementation is unchanged.
+[CI 40916758992](https://github.com/GosuBoy/op1emu/actions/runs/40916758992)
+has successful Linux OFF 38/38, Linux ON 41/41, fixture, Python and libc++
+results. The first queued macOS job was cancelled before any steps ran;
+the isolated retry remains queued as of 2026-10-29 17:31 UTC. The implementation's
+successful macOS run and final local Apple-silicon tests remain separate
+evidence; a queued job is not reported as a passing check.
+
+All 245 logical PCM/CSV/JSON files and both scripted debugger JSONL logs match
+local output byte for byte in the final Linux artifacts and the successful
+implementation macOS artifact. All 224 preceding public data/identity files
+are unchanged from 40904405319. Console logs and command-file metadata are
+excluded; no guest data or timestamps are normalized. Every artifact member
+is a public sport/codec/stream/debugger fixture. Private scene inputs, symbols,
+RAM, frames and captures are absent.
+
+| Source | Artifact ID | Archive SHA256 |
+|---|---:|---|
+| Linux OFF, test hardening |12916406981|`da7f1c33560744fabc5952b1d06d1fcf2b7a62ce429e40e244db256082706b1a`|
+| Linux ON, test hardening |12915099824|`fc150cc480a190ff39cff266c2c6445516727f7c9461f81ed22c559a6d7d98b2`|
+| macOS OFF, implementation |12915498049|`791f11870cd75060ef7948578a9f23d62404772bd6e0ac5b26b334e114f5e725`|
