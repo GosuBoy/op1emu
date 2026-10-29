@@ -37,6 +37,17 @@ upload and verifies the original colors and display-texture reuse.
 Local validation passed all 22 CTests in the SVG build and the OpenGL harness
 in both SVG-enabled and PNG-only builds, including the filter-switch checks.
 
+The optional `--floating-ui` mode removes the window decoration and clears the
+background transparently, retaining the SVG's alpha at its rounded corners.
+Unbound casing drags move the window; all buttons, encoders and volume regions
+retain their input. Escape restores the normal window; Cmd/Ctrl with `+`/`-`,
+`M` or `W` resizes, minimizes or closes it. The framed UI remains the default,
+and missing SVG/transparency support falls back to it. Local macOS checks passed
+transparent-corner/opaque-body readback, all 58 buttons, encoder/volume input,
+native window movement, aspect-preserving resize, close and frame recovery.
+CI runs the floating harness too; without desktop transparency it explicitly
+checks the framed fallback. Live firmware reached the Tape screen in this mode.
+
 ## Reference comparisons
 
 Inkscape 1x / resvg 0.49.0 1x:
@@ -157,11 +168,11 @@ Observed live results:
   exhaustive note combinations and physical-device behavior were not measured.
 
 The user explicitly authorized publication of this updated live firmware-246
-Tape preview, with the calibrated screen placement and bilinear smoothing:
+Tape preview in the floating window, with calibrated placement and bilinear smoothing:
 
-![Work-in-progress SVG panel with the smoothed live Tape framebuffer on Retina](live-svg-tape-smoothed-retina.png)
+![Work-in-progress floating SVG window with the live Tape framebuffer on Retina](live-svg-floating-retina.png)
 
 This is a progress preview, not a readiness claim. The PR remains draft and is
-not ready for review or merge. The earlier published Drum image predates the
-screen-inset calibration and smoothing; other live captures remain private.
+not ready for review or merge. Earlier published Drum and framed Tape images
+predate the floating window; other live captures remain private.
 The color-screen captures are firmware-free diagnostic images.

@@ -163,7 +163,10 @@ jobs:
 
       - name: OpenGL shell regression (Linux)
         if: runner.os == 'Linux'
-        run: xvfb-run -a -s "-screen 0 2560x1600x24" ./build/op1-ui-preview --test
+        run: |
+          xvfb-run -a -s "-screen 0 2560x1600x24" ./build/op1-ui-preview --test
+          # Without a desktop compositor this verifies the explicit framed fallback.
+          xvfb-run -a -s "-screen 0 2560x1600x24" ./build/op1-ui-preview --test-floating
 
       - name: OpenGL shell regression (macOS, when context available)
         if: runner.os == 'macOS'
@@ -180,4 +183,5 @@ jobs:
             exit "$context_status"
           else
             ./build/op1-ui-preview --test
+            ./build/op1-ui-preview --test-floating
           fi

@@ -267,7 +267,7 @@ runtime check when its VM cannot provide one; Linux CI runs the GL assertions
 under Xvfb. The macOS GL runtime was also verified on the local arm64 desktop.
 See the [visual comparison and verification record](docs/visual-comparisons/resvg-frontend/README.md).
 
-On the `experiment/floating-svg-ui` branch, try the optional body-only window:
+Try the optional body-only SVG window:
 
 ```bash
 ./build/op1emu path/to/nand.bin --ui=svg --floating-ui
@@ -289,8 +289,8 @@ Firmware-free checks and transparent capture:
 ./build/op1-ui-preview --floating gui/ui-svg.json floating-panel.png
 ```
 
-The PR branch `feature/resvg-svg-ui` is the rollback point. Omitting
-`--floating-ui` runs the normal window even on the experiment branch.
+Omitting `--floating-ui` runs the normal window. The pre-floating version is
+commit `e215f1f`; the tested prototype is retained on `experiment/floating-svg-ui`.
 Local macOS validation passed all 22 CTests, the normal OpenGL harness, and
 the floating harness's transparency, all-button, encoder, volume, native-drag,
 resize, close and title-bar recovery checks. The PNG-only build also passed
