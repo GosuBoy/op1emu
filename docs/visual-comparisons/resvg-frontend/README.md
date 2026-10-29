@@ -15,9 +15,12 @@ with no perspective transform on the screen. No Figma reference was provided;
 Inkscape is the independent reference here.
 
 The blank screen rectangle is x=282.227, y=20.7792, w=258.784, h=126.956.
-The live 2:1 framebuffer is centered within it at x=284.663, y=20.7792,
-w=253.912, h=126.956, retaining small black side margins. Screen quads also
-support perspective transforms (covered by the GL harness).
+The live 2:1 framebuffer is centered within it at x=296.663, y=26.7792,
+w=229.912, h=114.956. Following the user's reference, a six-unit inset on
+the recess is applied before fitting the framebuffer's 2:1 aspect ratio,
+leaving black glass visible on all four sides. This is a visual calibration,
+not a measurement of the physical display. Screen quads also support
+perspective transforms (covered by the GL harness).
 
 ## Reference comparisons
 
@@ -142,5 +145,6 @@ The user explicitly authorized publication of this live firmware-246 Drum previe
 
 ![Work-in-progress SVG panel with the live Drum framebuffer on Retina](live-svg-drum-retina.png)
 
-This is a progress preview, not a readiness claim. Other live captures remain
-private. The earlier color-screen captures are firmware-free diagnostic images.
+This is a progress preview captured before the screen-inset calibration, not a
+readiness claim. Other live captures remain private. The earlier color-screen
+captures are firmware-free diagnostic images.
