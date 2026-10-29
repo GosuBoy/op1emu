@@ -1,6 +1,8 @@
 // Host supplies only declared external clocks/reset/wiring and observes.
 // No guest MMIO writes, refills, manual service/time advance or IRQ injection.
 #include "cpu/cpu.h"
+#include "cpu/debugger.h"
+#include "cpu/debug_commands.h"
 #include "cpu/dma.h"
 #include "cpu/nand.h"
 #include "cpu/sport.h"
@@ -12,6 +14,7 @@
 #include "../ext/bcore/src/cec.h"
 #include <nlohmann/json.hpp>
 #include <fstream>
+#include <filesystem>
 #include <iostream>
 #include <thread>
 #include <utility>
@@ -56,7 +59,8 @@ int main(int argc, char** argv) {
     if (argc < 4) return 2;
     const std::string mode = argv[3];
     if (mode != "normal" && mode != "delay" && mode != "premature" && mode != "pause" && mode != "clock-timeout" && mode != "stop-delay" && mode != "work") return 2;
-    bool chain = false;
+    bool chain = false, debugEnabled = false;
+    std::string debugFile, debugLog;
     uint64_t maxCycles = 200'000'000;
     unsigned rate = 48000, blockCount = 256, mailboxAddress = 0x2000, ledgerAddress = 0x10000;
     unsigned ledgerCapacity = 2048, runLimit = 3'000'000;
@@ -64,7 +68,10 @@ int main(int argc, char** argv) {
     std::vector<std::pair<u32, unsigned>> memoryRanges;
     std::vector<std::pair<u32, uint64_t>> pcWatches;
     for (int i = 4; i < argc; ++i) {
-        if (std::string(argv[i]) == "--chain") chain = true;
+        if (std::string(argv[i]) == "--debug-enable") debugEnabled = true;
+        else if (std::string(argv[i]) == "--debug-commands" && i + 1 < argc) {debugFile=argv[++i];debugEnabled=true;}
+        else if (std::string(argv[i]) == "--debug-log" && i + 1 < argc) debugLog=argv[++i];
+        else if (std::string(argv[i]) == "--chain") chain = true;
         else if (std::string(argv[i]) == "--max-cycles" && i + 1 < argc) maxCycles = std::stoull(argv[++i]);
         else if (std::string(argv[i]) == "--rate" && i + 1 < argc) rate = std::stoul(argv[++i]);
         else if (std::string(argv[i]) == "--blocks" && i + 1 < argc) blockCount = std::stoul(argv[++i]);
@@ -87,6 +94,14 @@ int main(int argc, char** argv) {
     }
     if ((rate != 48000 && rate != 44100) || !blockCount || blockCount > 16384 ||
         ledgerCapacity > 131072 || !ledgerCapacity) return 2;
+    if (!debugFile.empty()) {
+        auto same=[](const std::string& a,const std::string& b){return std::filesystem::weakly_canonical(a)==std::filesystem::weakly_canonical(b);};
+        if(debugLog.empty()||same(debugLog,argv[1])||same(debugLog,debugFile)) return 2;
+        for(const auto* extension:{".pcm",".csv",".json"}) {
+            const auto output=std::string(argv[2])+extension;
+            if(same(debugLog,output)||same(debugFile,output))return 2;
+        }
+    }
     const auto mclk = rate == 44100 ? 11'289'600u : 12'288'000u;
     GuestCpu cpu(chain);
     cpu.SetTwiSpeedup(1); cpu.ConfigureCs42l52Test(mclk);
@@ -169,6 +184,16 @@ int main(int argc, char** argv) {
     LDRParser loader;
     if (!loader.loadFile(argv[1]) || loader.getDXEs().size() != 1) return 2;
     LoadDXE(cpu, loader.getDXEs().front());
+    std::unique_ptr<CpuDebugger> debugger;
+    std::unique_ptr<DebugCommands> debugCommands;
+    if (debugEnabled) debugger=std::make_unique<CpuDebugger>(cpu);
+    if (!debugFile.empty()) {
+        if (debugLog.empty()) return 2;
+        debugCommands=std::make_unique<DebugCommands>(*debugger,debugFile,debugLog);
+        if (debugCommands->Poll()) return 2;
+    }
+    bool debugQuit=false;
+    auto nextDebugPoll=std::chrono::steady_clock::now();
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
     unsigned runs = 0;
     Json frames = Json::array();
@@ -206,6 +231,11 @@ int main(int argc, char** argv) {
     };
     while (cpu.PC() != kLdrReturnAddress && !cpu.Failed() && cpu.Time().Cycles() < maxCycles &&
            runs < runLimit && std::chrono::steady_clock::now() < deadline) {
+        if (debugCommands && (debugger->Stopped() || std::chrono::steady_clock::now()>=nextDebugPoll)) {
+            if (debugCommands->Poll()) {debugQuit=true;break;}
+            nextDebugPoll=std::chrono::steady_clock::now()+std::chrono::milliseconds(1);
+        }
+        if (debugger && debugger->Stopped()) {std::this_thread::sleep_for(std::chrono::milliseconds(1));continue;}
         for (auto& watch : pcWatches) if (cpu.PC() == watch.first) ++watch.second;
         cpu.Run(); ++runs;
         // The optional publisher yields through guest IDLE. Observe at
@@ -214,6 +244,7 @@ int main(int argc, char** argv) {
             frameIdleCycles = cpu.Time().IdleCycles(); observeFrame();
         }
     }
+    if (debugCommands && !debugQuit) debugCommands->Finish(cpu.PC()==kLdrReturnAddress?"ldr-return":cpu.Failed()?"cpu-failed":"execution-limit");
     observeFrame();
     observeBuffers();
     capture.Finish();

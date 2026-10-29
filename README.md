@@ -34,6 +34,9 @@ external `mkyaffs2` utility. The guide also covers optional local firmware
 decryption with `--otp PATH` or explicitly requested `--fetch-otp` retrieval;
 content-only provisioning does not decrypt firmware.
 
+A separate [deterministic RAM-guest debugger](docs/deterministic-debugger.md)
+provides local stop, read-only inspection and resume without a network service.
+
 ## Headless operation
 
 Run from the repository root with the matching `otp.bin`:

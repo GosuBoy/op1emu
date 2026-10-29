@@ -134,8 +134,10 @@ unchanged public capture identities and the private observation's limits.
 3. Extend qualified DMA modes to the descriptor/prefetch semantics actually
    required by a recovered hardware driver. Continue deterministic gameplay,
    display and mixer integration, keeping host playback separate.
-4. Develop portable guest inspection/debugging, then machine checkpoints and
-   targeted interrupt/reset qualification.
+4. The [deterministic debugger](deterministic-debugger.md) now provides portable
+   stop/inspect/resume at exact run/IDLE boundaries, with public audio and
+   unchanged private gameplay comparisons. Machine checkpoints, stepping and
+   targeted interrupt/reset qualification remain separate milestones.
 
 ## Keeping the branch maintainable
 

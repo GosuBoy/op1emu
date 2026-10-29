@@ -59,7 +59,10 @@ struct BcoreStats;
 namespace profiling { struct ServiceStats; struct MemoryCensus; }
 class BcoreEventSink;
 
+class CpuDebugger;
+
 class BlackFinCpu : public CpuInterface {
+    friend class CpuDebugger;
     friend class StartupTrace;
 public:
     // deterministic: as fast as the host allows, not paced to its clock; see
@@ -307,6 +310,8 @@ protected:
     uint64_t nextPaceCycles_ = 0;
     uint8_t idleWake_ = 0;  // SIC::Wakeup(), for generated code (CpuState::idle_wake)
     bool chaining_ = false;
+    CpuDebugger* debugger_ = nullptr; // owner-thread attachment, fixed during Run
+    bool debugIdlePending_ = false; // resume the original IDLE wait exactly once
     // A block is running (Core::run): what a device access queues now was
     // not in the run's budget.
     bool inRun_ = false;

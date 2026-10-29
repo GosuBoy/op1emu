@@ -1,4 +1,5 @@
 #include "cpu.h"
+#include "debugger.h"
 #include "peripheral/cs42l52.h"
 #include "observed_memory.h"
 #include "bcore_memory.h"
@@ -410,7 +411,9 @@ void BlackFinCpu::ProcessInterrupt(int pin, int level) {
 }
 
 void BlackFinCpu::HaltExecution(HaltReason reason) {
-    // TODO
+    (void)reason;
+    if (!debugger_) throw std::logic_error("HaltExecution requires deterministic CpuDebugger");
+    debugger_->RequestPause();
 }
 
 void BlackFinCpu::SaveContext() {
@@ -438,6 +441,12 @@ void BlackFinCpu::InvalidateTranslations() {
 }
 
 HaltReason BlackFinCpu::Run() {
+    if (debugger_ && debugger_->Boundary("run-entry")) return HaltReason::Break;
+    if (debugIdlePending_) {
+        debugIdlePending_ = false;
+        Wait();
+        return HaltReason::Break;
+    }
     // Events queued from this thread from now on are timed in guest time.
     if (cpuThread_.load(std::memory_order_relaxed) != std::this_thread::get_id())
         cpuThread_.store(std::this_thread::get_id(), std::memory_order_relaxed);
@@ -501,7 +510,13 @@ HaltReason BlackFinCpu::Run() {
     HostWork(would);
     // An IDLE waits for its wakeup (Wait()), unless HostWork() just took an
     // interrupt: that was it (it cleared the pending flag Wait() looks at).
-    if (cpuState_->idle && !cpuState_->did_jump) Wait();
+    if (cpuState_->idle && !cpuState_->did_jump) {
+        if (debugger_ && debugger_->Boundary("before-idle-wait")) {
+            debugIdlePending_ = true;
+            return HaltReason::Break;
+        }
+        Wait();
+    }
 #ifdef ENABLE_PROFILING
     if (would) {
         bool violated = false;
@@ -780,6 +795,7 @@ bool BlackFinCpu::OffThreadWork() {
 }
 
 void BlackFinCpu::SetChaining(bool chaining, bool dry) {
+    if (debugger_ && (chaining || dry)) throw std::logic_error("debug mode requires chaining disabled");
     chaining_ = chaining;
     core_->set_chaining(chaining, dry);
 }

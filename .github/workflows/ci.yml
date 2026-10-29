@@ -201,6 +201,7 @@ jobs:
             build/codec-guest/
             build/stream-guest/
             build/stream-guest-44100/
+            build/debugger-captures/
 
       - name: OpenGL shell regression (Linux)
         if: runner.os == 'Linux'

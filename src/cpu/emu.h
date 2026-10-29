@@ -70,6 +70,7 @@ public:
     u32 MemoryRead32(u32 vaddr);
     // True when a device maps every byte of [addr, addr + length).
     bool Maps(u32 addr, u32 length);
+    std::vector<u8> InspectRam(u32 addr, u32 length) const;
     u64 MemoryRead64(u32 vaddr);
 
     void MemoryWrite8(u32 vaddr, u8 value);

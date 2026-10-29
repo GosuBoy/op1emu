@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <algorithm>
 #include <cassert>
+#include <stdexcept>
 #include <deque>
 #include <cstring>
 
@@ -51,6 +52,7 @@ public:
     // At guest cycle `now`, as a service then.
     u32 ProcessTransfer(uint64_t now);
     DMA::TxSnapshot InspectTx() const;
+    DMA::DebugTxSnapshot InspectDebugTx() const;
 
 protected:
     void ProcessDescriptor();
@@ -777,4 +779,15 @@ void DMA::BindInterrupt(int channel, int q, InterruptHandler callback) {
     if (channel >= 0 && channel < static_cast<int>(channels.size())) {
         channels[channel]->BindInterrupt(q, callback);
     }
+}
+
+DMA::DebugTxSnapshot DMAChannel::InspectDebugTx() const {
+    DMA::DebugTxSnapshot s{InspectTx(), startAddr, xCount,
+        u32((completed ? 1 : 0) | (error ? 2 : 0) | (running ? 8 : 0)), {}};
+    for (const auto& word : txFifo_) s.fifo.push_back({word.address, word.value, word.work});
+    return s;
+}
+DMA::DebugTxSnapshot DMA::InspectDebugTx(unsigned channel) const {
+    if (channel >= channels.size()) throw std::invalid_argument("invalid DMA channel");
+    return channels[channel]->InspectDebugTx();
 }

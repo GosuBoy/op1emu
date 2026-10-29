@@ -176,6 +176,9 @@ if(ENABLE_PROFILING)
     target_compile_definitions(emulator PUBLIC ENABLE_PROFILING)
 endif()
 
+add_executable(op1-debug tools/debugger_main.cpp)
+target_link_libraries(op1-debug PRIVATE emulator nlohmann_json::nlohmann_json)
+
 add_executable(ldrdump tools/ldrdump.cpp)
 target_link_libraries(ldrdump emulator)
 
@@ -227,6 +230,9 @@ if(OP1_BUILD_HEADLESS_TESTS)
     add_executable(op1-sport-guest-test tests/sport_guest_test.cpp)
     target_link_libraries(op1-sport-guest-test PRIVATE emulator bfin-core nlohmann_json::nlohmann_json Threads::Threads)
     add_executable(op1-codec-guest-test tests/codec_guest_test.cpp)
+    add_executable(op1-debugger-test tests/debugger_test.cpp)
+    target_link_libraries(op1-debugger-test PRIVATE emulator bfin-core nlohmann_json::nlohmann_json Threads::Threads)
+    add_test(NAME op1-debugger-test COMMAND op1-debugger-test)
     add_executable(op1-stream-guest-test tests/stream_guest_test.cpp)
     target_link_libraries(op1-stream-guest-test PRIVATE emulator bfin-core nlohmann_json::nlohmann_json Threads::Threads)
     target_link_libraries(op1-codec-guest-test PRIVATE emulator bfin-core nlohmann_json::nlohmann_json Threads::Threads)
@@ -327,6 +333,10 @@ if(OP1_BUILD_HEADLESS_TESTS)
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/codec_guest_integration.py
                     $<TARGET_FILE:op1-codec-guest-test> ${CMAKE_CURRENT_BINARY_DIR}/codec-guest $<TARGET_FILE:op1emu>)
         set_tests_properties(op1-codec-guest PROPERTIES TIMEOUT 180 RESOURCE_LOCK usbip-port)
+        add_test(NAME op1-debugger-integration
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/debugger_integration.py
+                $<TARGET_FILE:op1-stream-guest-test> $<TARGET_FILE:op1-debug> ${CMAKE_CURRENT_BINARY_DIR}/debugger-captures)
+        set_tests_properties(op1-debugger-integration PROPERTIES TIMEOUT 180 RESOURCE_LOCK usbip-port)
         add_test(NAME op1-stream-guest
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/stream_guest_integration.py
                     $<TARGET_FILE:op1-stream-guest-test> ${CMAKE_CURRENT_BINARY_DIR}/stream-guest $<TARGET_FILE:op1emu>)

@@ -11,6 +11,7 @@ class TimeSource;
 // Bounded, digital primary SPORT TX model. See docs/sport-transmit.md for
 // the hardware contract and the deliberately explicit timing assumptions.
 class SportTxTransport {
+    friend class CpuDebugger;
 public:
     struct Word {
         uint64_t ns, index;

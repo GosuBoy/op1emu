@@ -4,6 +4,7 @@
 #include <functional>
 
 class SIC : public RegisterDevice {
+    friend class CpuDebugger;
 public:
     SIC(u32 baseAddr);
 

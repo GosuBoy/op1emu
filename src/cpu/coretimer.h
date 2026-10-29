@@ -11,6 +11,7 @@ class TimeSource;
 // then reloads TPERIOD (TAUTORLD) or stops. The count is kept as an origin
 // and the count it had there, so it advances without being stepped.
 class CoreTimer : public RegisterDevice {
+    friend class CpuDebugger;
 public:
     CoreTimer(u32 baseAddr, const TimeSource& time);
 

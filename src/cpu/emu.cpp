@@ -4,6 +4,7 @@
 #include <functional>
 #include <typeinfo>
 #include "emu.h"
+#include <stdexcept>
 #include <utils/log.h>
 
 // Unique across every Emulator and every change to one's device map.
@@ -332,4 +333,22 @@ void Emulator::PatchSoftwareBreak(u32 addr, u8 num)
 
 void Emulator::RemoveSoftwareBreak(u32 addr)
 {
+}
+
+std::vector<u8> Emulator::InspectRam(u32 addr, u32 length) const {
+    if (!length || length > 4096 || uint64_t(addr) + length > 0x100000000ULL)
+        throw std::invalid_argument("RAM range must be 1..4096 bytes without wrapping");
+    // Validate the whole range before copying. Watched/deferred DMA memory,
+    // hooks, subclasses (ROM/devices), partial direct pages and MMRs fail.
+    for (uint64_t a = addr; a < uint64_t(addr) + length;) {
+        if (!Quiet(u32(a)) || !directPages[a >> PAGE_BITS])
+            throw std::invalid_argument("range is not passive plain RAM");
+        a = std::min(uint64_t(addr) + length, ((a >> PAGE_BITS) + 1) << PAGE_BITS);
+    }
+    std::vector<u8> result(length);
+    for (u32 i = 0; i < length; ++i) {
+        const u32 a = addr + i;
+        result[i] = directPages[a >> PAGE_BITS][a & ((1u << PAGE_BITS) - 1)];
+    }
+    return result;
 }

@@ -1,4 +1,5 @@
 #pragma once
+#include <array>
 
 #include "io.h"
 #include "emu.h"
@@ -148,6 +149,12 @@ public:
     using TxObserver = std::function<void(const TxEvent&)>;
     void SetTxObserver(TxObserver observer) { txObserver_ = std::move(observer); }
     TxSnapshot InspectTx(unsigned channel) const;
+    struct DebugTxSnapshot {
+        TxSnapshot progress;
+        u32 startAddress, configuredCount, irqStatus;
+        std::vector<std::array<uint64_t, 3>> fifo; // source address, value, work
+    };
+    DebugTxSnapshot InspectDebugTx(unsigned channel) const;
     void ObserveTx(const TxEvent& event) const { if (txObserver_) txObserver_(event); }
     // Without a time source no bus is paced (CyclesPerElement is ignored).
     DMA(u32 baseAddr, Emulator& emu, const TimeSource* time = nullptr);
