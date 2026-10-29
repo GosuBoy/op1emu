@@ -15,12 +15,15 @@ with no perspective transform on the screen. No Figma reference was provided;
 Inkscape is the independent reference here.
 
 The blank screen rectangle is x=282.227, y=20.7792, w=258.784, h=126.956.
-The live 2:1 framebuffer is centered within it at x=296.663, y=26.7792,
-w=229.912, h=114.956. Following the user's reference, a six-unit inset on
-the recess is applied before fitting the framebuffer's 2:1 aspect ratio,
-leaving black glass visible on all four sides. This is a visual calibration,
-not a measurement of the physical display. Screen quads also support
-perspective transforms (covered by the GL harness).
+The live 2:1 framebuffer is placed at x=298, y=32, w=224, h=112, leaving
+black glass visible on all four sides. The user's hardware photograph was
+aligned by the recess corners; the track-number outline and tape-reel centers
+were compared to the emulator capture. This places the image about 2.6% smaller
+and slightly lower than the initial centered inset, matching the photo's wider
+top margin. Coordinates are rounded rather than implying precision from a
+handheld photograph. This is a visual calibration, not a physical display
+measurement. Screen quads also support perspective transforms (covered by
+the GL harness).
 
 ## Reference comparisons
 
