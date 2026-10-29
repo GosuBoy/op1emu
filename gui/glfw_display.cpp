@@ -8,10 +8,31 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <filesystem>
 #include <iostream>
 #include <stdexcept>
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
+
+namespace {
+constexpr const char *themes[] = {"slate", "silver", "yellow", "green", "purple", "orange"};
+constexpr double menuWidth = 220, menuHeight = 244, menuTop = 36, menuRowHeight = 34;
+void MenuRect(double x, double y, double width, double height, double radius) {
+    constexpr double pi = 3.14159265358979323846;
+    glBegin(GL_TRIANGLE_FAN);
+    glVertex2d(x + width / 2, y + height / 2);
+    for (int c = 0; c < 4; ++c) {
+        const double cx = x + (c == 0 || c == 3 ? width - radius : radius);
+        const double cy = y + (c < 2 ? height - radius : radius);
+        for (int step = 0; step <= 8; ++step) {
+            const double angle = (c * .5 + step / 16.0) * pi;
+            glVertex2d(cx + radius * std::cos(angle), cy + radius * std::sin(angle));
+        }
+    }
+    glVertex2d(x + width, y + height - radius);
+    glEnd();
+}
+} // namespace
 
 GLFWDisplay::GLFWDisplay(const std::string &configPath, bool floating, const std::string &theme)
     : floating_(floating), theme_(theme) {
@@ -69,12 +90,16 @@ GLFWDisplay::GLFWDisplay(const std::string &configPath, bool floating, const std
     }
 }
 void GLFWDisplay::Cleanup() {
+    if (themeRender_.valid())
+        themeRender_.wait(); // worker owns no GLFW/GL state and captures no display pointer
     if (window_) {
         glfwMakeContextCurrent(window_);
         if (texture_)
             glDeleteTextures(1, &texture_);
         if (backgroundTexture_)
             glDeleteTextures(1, &backgroundTexture_);
+        if (menuTexture_)
+            glDeleteTextures(1, &menuTexture_);
         glfwDestroyWindow(window_);
         window_ = nullptr;
     }
@@ -105,6 +130,7 @@ void GLFWDisplay::UploadBackground(const uint8_t *data, int width, int height) {
     glPopAttrib();
 }
 void GLFWDisplay::LoadPanel(const std::string &path) {
+    CloseThemeMenu();
     auto config = UILayout::Load(path);
     std::unique_ptr<SvgBackgroundRenderer> svg;
     if (config.svg) {
@@ -116,6 +142,7 @@ void GLFWDisplay::LoadPanel(const std::string &path) {
                 svg = std::make_unique<SvgBackgroundRenderer>(config.themeBackground, theme.Stylesheet());
             } catch (const std::exception &e) {
                 std::cerr << "SVG theme failed: " << e.what() << "; using original SVG colors\n";
+                theme_.clear();
             }
         }
         if (!svg)
@@ -246,6 +273,7 @@ void GLFWDisplay::RenderFramebuffer(bool present) {
     if (!window_)
         return;
     glfwMakeContextCurrent(window_);
+    UpdateThemeSwitch();
     int fw, fh, lw, lh;
     glfwGetFramebufferSize(window_, &fw, &fh);
     glfwGetWindowSize(window_, &lw, &lh);
@@ -306,6 +334,8 @@ void GLFWDisplay::RenderFramebuffer(bool present) {
     glEnable(GL_BLEND);
     DrawBackground();
     DrawScreen();
+    glLoadIdentity();
+    DrawThemeMenu(lw, lh, fw, fh);
     glPopMatrix();
     glMatrixMode(GL_PROJECTION);
     glPopMatrix();
@@ -347,10 +377,169 @@ void GLFWDisplay::ResizeFloating(double factor) {
     height = std::max(1, int(std::lround(width * artHeight_ / artWidth_)));
     glfwSetWindowSize(window_, width, height);
 }
+int GLFWDisplay::SelectedThemeRow() const {
+    if (theme_.empty())
+        return 1; // unmodified supplied artwork is Silver
+    for (int i = 0; i < 6; ++i)
+        if (std::filesystem::path(SvgTheme::Resolve(theme_)).lexically_normal() ==
+            std::filesystem::path(SvgTheme::Resolve(themes[i])).lexically_normal())
+            return i;
+    return -1; // a custom palette has no preset checkmark
+}
+void GLFWDisplay::FitThemeMenu(int width, int height) {
+    themeMenuScale_ = std::max(.01, std::min({1.0, (width - 8.0) / menuWidth, (height - 8.0) / menuHeight}));
+    themeMenuPosition_.x = std::clamp(themeMenuPosition_.x, 4.0, std::max(4.0, width - menuWidth * themeMenuScale_ - 4));
+    themeMenuPosition_.y = std::clamp(themeMenuPosition_.y, 4.0, std::max(4.0, height - menuHeight * themeMenuScale_ - 4));
+}
+int GLFWDisplay::ThemeMenuRow(double x, double y) const {
+    x = (x - themeMenuPosition_.x) / themeMenuScale_;
+    y = (y - themeMenuPosition_.y) / themeMenuScale_;
+    if (x < 6 || x >= menuWidth - 6 || y < menuTop || y >= menuTop + 6 * menuRowHeight)
+        return -1;
+    return int((y - menuTop) / menuRowHeight);
+}
+void GLFWDisplay::OpenThemeMenu(double x, double y) {
+    if (!svg_ || uiConfig_.themeBackground.empty())
+        return;
+    try {
+        if (!menuSvg_)
+            menuSvg_ = std::make_unique<SvgBackgroundRenderer>("gui/theme-menu.svg");
+        for (int i = 0; i < 6; ++i) {
+            const auto palette = SvgTheme::Load(SvgTheme::Resolve(themes[i]));
+            const auto color = std::stoul(palette.colors.at("body").substr(1), nullptr, 16);
+            themeSwatches_[i] = {float((color >> 16) & 255) / 255, float((color >> 8) & 255) / 255,
+                                 float(color & 255) / 255};
+        }
+        themeMenuPosition_ = {x, y};
+        int width, height;
+        glfwGetWindowSize(window_, &width, &height);
+        FitThemeMenu(width, height);
+        themeMenuHover_ = SelectedThemeRow();
+        themeMenuOpen_ = true;
+        dragging_ = false;
+        input_.ReleaseAll(); // the popup owns input until dismissed; no held notes get stuck
+    } catch (const std::exception &e) {
+        std::cerr << "Cannot open theme menu: " << e.what() << '\n';
+        CloseThemeMenu();
+    }
+}
+void GLFWDisplay::CloseThemeMenu() {
+    themeMenuOpen_ = false;
+    themeMenuHover_ = -1;
+}
+void GLFWDisplay::RequestTheme(const std::string &theme) {
+    if (svg_ && !uiConfig_.themeBackground.empty())
+        pendingTheme_ = theme;
+}
+void GLFWDisplay::UpdateThemeSwitch() {
+    if (themeRender_.valid() && themeRender_.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+        try {
+            auto ready = themeRender_.get();
+            if (pendingTheme_ && *pendingTheme_ == renderingTheme_) {
+                UploadBackground(ready.pixels.rgba.data(), ready.pixels.width, ready.pixels.height);
+                svg_ = std::move(ready.svg);
+                cachedWidth_ = ready.pixels.width;
+                cachedHeight_ = ready.pixels.height;
+                theme_ = renderingTheme_;
+                pendingTheme_.reset();
+                std::clog << "SVG theme switched to " << theme_ << '\n';
+            }
+        } catch (const std::exception &e) {
+            std::cerr << "Theme switch failed: " << e.what() << "; keeping current theme\n";
+            if (pendingTheme_ && *pendingTheme_ == renderingTheme_)
+                pendingTheme_.reset();
+        }
+    }
+    if (pendingTheme_ && !themeRender_.valid()) {
+        if (*pendingTheme_ == theme_ || (theme_.empty() && *pendingTheme_ == "silver")) {
+            pendingTheme_.reset();
+            return;
+        }
+        renderingTheme_ = *pendingTheme_;
+        const auto path = uiConfig_.themeBackground, theme = renderingTheme_;
+        const auto width = std::max(1, cachedWidth_), height = std::max(1, cachedHeight_);
+        const auto artWidth = artWidth_, artHeight = artHeight_;
+        try {
+            themeRender_ = std::async(std::launch::async, [path, theme, width, height, artWidth, artHeight] {
+                auto svg = std::make_unique<SvgBackgroundRenderer>(path,
+                    SvgTheme::Load(SvgTheme::Resolve(theme)).Stylesheet());
+                if (svg->Width() != artWidth || svg->Height() != artHeight)
+                    throw std::runtime_error("Theme artwork dimensions differ from the active layout");
+                auto pixels = svg->Render(width, height);
+                return ThemeRender{std::move(svg), std::move(pixels)};
+            });
+        } catch (const std::exception &e) {
+            std::cerr << "Cannot start theme rendering: " << e.what() << "; keeping current theme\n";
+            pendingTheme_.reset();
+        }
+    }
+}
+void GLFWDisplay::DrawThemeMenu(int width, int height, int fbWidth, int fbHeight) {
+    if (!themeMenuOpen_)
+        return;
+    FitThemeMenu(width, height);
+    const int tw = std::max(1, int(std::ceil(menuWidth * themeMenuScale_ * fbWidth / width))),
+              th = std::max(1, int(std::ceil(menuHeight * themeMenuScale_ * fbHeight / height)));
+    if (tw != menuTextureWidth_ || th != menuTextureHeight_) {
+        auto pixels = menuSvg_->Render(tw, th);
+        if (!menuTexture_)
+            glGenTextures(1, &menuTexture_);
+        glBindTexture(GL_TEXTURE_2D, menuTexture_);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, tw, th, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels.rgba.data());
+        menuTextureWidth_ = tw;
+        menuTextureHeight_ = th;
+    }
+    glPushMatrix();
+    glTranslated(themeMenuPosition_.x, themeMenuPosition_.y, 0);
+    glScaled(themeMenuScale_, themeMenuScale_, 1);
+    glDisable(GL_TEXTURE_2D);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+    glColor4f(0, 0, 0, .3f);
+    MenuRect(2, 3, menuWidth, menuHeight, 9);
+    glColor4f(.14f, .15f, .18f, 1);
+    MenuRect(0, 0, menuWidth, menuHeight, 9);
+    for (int i = 0; i < 6; ++i) {
+        const auto y = menuTop + i * menuRowHeight;
+        if (themeMenuHover_ == i) {
+            glColor4f(.25f, .28f, .34f, 1);
+            MenuRect(6, y, menuWidth - 12, menuRowHeight - 2, 5);
+        }
+        glColor4f(themeSwatches_[i][0], themeSwatches_[i][1], themeSwatches_[i][2], 1);
+        MenuRect(30, y + 9, 14, 14, 3);
+        if (SelectedThemeRow() == i) {
+            glColor4f(.95f, .95f, .97f, 1);
+            glLineWidth(1.5f);
+            glBegin(GL_LINE_STRIP);
+            glVertex2d(13, y + 16);
+            glVertex2d(17, y + 20);
+            glVertex2d(23, y + 12);
+            glEnd();
+        }
+    }
+    glColor4f(1, 1, 1, 1);
+    glEnable(GL_TEXTURE_2D);
+    glBindTexture(GL_TEXTURE_2D, menuTexture_);
+    glBegin(GL_QUADS);
+    glTexCoord2f(0, 0); glVertex2d(0, 0);
+    glTexCoord2f(1, 0); glVertex2d(menuWidth, 0);
+    glTexCoord2f(1, 1); glVertex2d(menuWidth, menuHeight);
+    glTexCoord2f(0, 1); glVertex2d(0, menuHeight);
+    glEnd();
+    glPopMatrix();
+}
 void GLFWDisplay::CursorPositionCallback(GLFWwindow *w, double x, double y) {
     auto *self = static_cast<GLFWDisplay *>(glfwGetWindowUserPointer(w));
     self->cursorPosition_ = {x, y};
     self->hasCursorPosition_ = true;
+    if (self->themeMenuOpen_) {
+        self->themeMenuHover_ = self->ThemeMenuRow(x, y);
+        return;
+    }
     if (self->dragging_) {
         int wx, wy;
         glfwGetWindowPos(w, &wx, &wy);
@@ -358,8 +547,9 @@ void GLFWDisplay::CursorPositionCallback(GLFWwindow *w, double x, double y) {
                          wy + int(std::lround(y - self->dragOffset_.y)));
     }
 }
-void GLFWDisplay::MouseButtonCallback(GLFWwindow *w, int button, int action, int) {
-    if (button != GLFW_MOUSE_BUTTON_LEFT || (action != GLFW_PRESS && action != GLFW_RELEASE))
+void GLFWDisplay::MouseButtonCallback(GLFWwindow *w, int button, int action, int mods) {
+    if ((button != GLFW_MOUSE_BUTTON_LEFT && button != GLFW_MOUSE_BUTTON_RIGHT) ||
+        (action != GLFW_PRESS && action != GLFW_RELEASE))
         return;
     auto *self = static_cast<GLFWDisplay *>(glfwGetWindowUserPointer(w));
     double x, y;
@@ -373,6 +563,32 @@ void GLFWDisplay::MouseButtonCallback(GLFWwindow *w, int button, int action, int
         glfwGetCursorPos(w, &x, &y);
     }
     glfwGetWindowSize(w, &width, &height);
+    bool contextClick = button == GLFW_MOUSE_BUTTON_RIGHT;
+#ifdef __APPLE__
+    contextClick = contextClick || (button == GLFW_MOUSE_BUTTON_LEFT && (mods & GLFW_MOD_CONTROL));
+#else
+    (void)mods;
+#endif
+    if (contextClick) {
+        if (action == GLFW_PRESS)
+            self->OpenThemeMenu(x, y);
+        return;
+    }
+    if (self->themeMenuOpen_) {
+        if (action == GLFW_PRESS) {
+            const int row = self->ThemeMenuRow(x, y);
+            if (row >= 0)
+                self->RequestTheme(themes[row]);
+            self->CloseThemeMenu();
+            self->suppressLeftRelease_ = true;
+        }
+        return;
+    }
+    if (self->suppressLeftRelease_) {
+        if (action == GLFW_RELEASE)
+            self->suppressLeftRelease_ = false;
+        return;
+    }
     if (action == GLFW_RELEASE) {
         self->dragging_ = false;
         self->input_.Mouse(false, {});
@@ -390,6 +606,23 @@ void GLFWDisplay::KeyCallback(GLFWwindow *w, int key, int, int action, int mods)
     if (action != GLFW_PRESS && action != GLFW_RELEASE)
         return;
     auto *self = static_cast<GLFWDisplay *>(glfwGetWindowUserPointer(w));
+    if (self->themeMenuOpen_) {
+        if (action == GLFW_PRESS) {
+            if (key == GLFW_KEY_ESCAPE)
+                self->CloseThemeMenu();
+            else if (key == GLFW_KEY_UP || key == GLFW_KEY_DOWN) {
+                if (self->themeMenuHover_ < 0)
+                    self->themeMenuHover_ = key == GLFW_KEY_UP ? 5 : 0;
+                else
+                    self->themeMenuHover_ = (self->themeMenuHover_ + (key == GLFW_KEY_UP ? 5 : 1)) % 6;
+            } else if (key == GLFW_KEY_ENTER || key == GLFW_KEY_KP_ENTER || key == GLFW_KEY_SPACE) {
+                if (self->themeMenuHover_ >= 0)
+                    self->RequestTheme(themes[self->themeMenuHover_]);
+                self->CloseThemeMenu();
+            }
+        }
+        return;
+    }
     if (self->floating_ && action == GLFW_PRESS) {
         if (key == GLFW_KEY_ESCAPE) {
             self->RestoreWindowFrame();
@@ -424,6 +657,8 @@ void GLFWDisplay::FocusCallback(GLFWwindow *w, int focused) {
     if (!focused) {
         auto *self = static_cast<GLFWDisplay *>(glfwGetWindowUserPointer(w));
         self->input_.ReleaseAll();
+        self->CloseThemeMenu();
+        self->suppressLeftRelease_ = false;
         self->hasCursorPosition_ = false;
         self->dragging_ = false;
     }

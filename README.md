@@ -275,7 +275,11 @@ The palette experiment adds six optional SVG themes: `slate`, `silver`, `yellow`
 ```
 
 `--theme PATH.json` loads custom colors. See [theme files and comparison generation](gui/themes/README.md).
-The current prototype uses launch selection; a graphical theme selector is still pending.
+**Right-click the SVG window to switch themes while it runs.** The menu marks the
+current preset and shows color swatches. Click a theme, or use the arrow keys and
+Enter. Escape, clicking outside, or switching apps dismisses the menu. On macOS,
+Control-click also opens it. The live display and audio continue while it is open;
+theme rendering runs in the background. The selection lasts for this session.
 
 Try the optional body-only SVG window:
 
@@ -285,7 +289,7 @@ Try the optional body-only SVG window:
 
 The SVG's transparent corners show the desktop, with no title bar. Drag an
 unused part of the casing to move it; buttons, encoders and volume keep their
-normal controls. **Escape restores the title bar.** Cmd/Ctrl with `+` or `-`
+normal controls. **Escape closes an open theme menu, otherwise it restores the title bar.** Cmd/Ctrl with `+` or `-`
 resizes, with `M` minimizes and with `W` closes. The window preserves the panel's
 aspect ratio and is not made always-on-top. PNG fallback or unavailable desktop
 transparency restores a normal window. This experiment has been verified locally

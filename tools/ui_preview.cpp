@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstdlib>
 #include <iostream>
 #include <stdexcept>
 #include <thread>
@@ -116,6 +117,12 @@ class UIPreview {
             if (floating) {
                 if (d.floating_) {
                     Require(!glfwGetWindowAttrib(d.window_, GLFW_DECORATED), "floating window has no title bar");
+                    GLFWDisplay::CursorPositionCallback(d.window_, 100, 50);
+                    GLFWDisplay::MouseButtonCallback(d.window_, GLFW_MOUSE_BUTTON_RIGHT, GLFW_PRESS, 0);
+                    Require(d.themeMenuOpen_, "right-click opens menu in floating mode");
+                    GLFWDisplay::KeyCallback(d.window_, GLFW_KEY_ESCAPE, 0, GLFW_PRESS, 0);
+                    Require(!d.themeMenuOpen_ && d.floating_ && !glfwGetWindowAttrib(d.window_, GLFW_DECORATED),
+                            "Escape dismisses menu before restoring the floating frame");
                     int w, h;
                     auto pixels = Read(d, w, h);
                     Require(pixels[3] == 0 && pixels[(size_t(h / 2) * w + w / 2) * 4 + 3] == 255,
@@ -170,11 +177,14 @@ class UIPreview {
                     GLFWDisplay::MouseButtonCallback(d.window_, GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, 0);
                     Require(d.dragging_, "unbound casing starts a window drag");
                     GLFWDisplay::CursorPositionCallback(d.window_, x + 16, y + 12);
+                    // End the synthetic gesture before pumping queued physical cursor events.
+                    GLFWDisplay::MouseButtonCallback(d.window_, GLFW_MOUSE_BUTTON_LEFT, GLFW_RELEASE, 0);
                     glfwPollEvents();
                     glfwGetWindowPos(d.window_, &movedX, &movedY);
+                    if (std::abs(movedX - wx - 16) > 1 || std::abs(movedY - wy - 12) > 1)
+                        std::cerr << "native drag: " << wx << ',' << wy << " -> " << movedX << ',' << movedY << '\n';
                     Require(std::abs(movedX - wx - 16) <= 1 && std::abs(movedY - wy - 12) <= 1,
                             "casing drag moves the native window");
-                    GLFWDisplay::MouseButtonCallback(d.window_, GLFW_MOUSE_BUTTON_LEFT, GLFW_RELEASE, 0);
                     Require(!d.dragging_ && events.empty(), "window drag releases without instrument input");
                     GLFWDisplay::KeyCallback(d.window_, GLFW_KEY_EQUAL, 0, GLFW_PRESS, GLFW_MOD_CONTROL);
                     glfwPollEvents();
@@ -271,29 +281,100 @@ class UIPreview {
             GLFWDisplay::MouseButtonCallback(d.window_, GLFW_MOUSE_BUTTON_LEFT, GLFW_RELEASE, 0);
             Require(keys == std::vector<std::tuple<int, int, bool>>{{3, 2, true}, {3, 2, false}},
                     "mouse callbacks use event coordinates and release outside");
+            keys.clear();
+            GLFWDisplay::MouseButtonCallback(d.window_, GLFW_MOUSE_BUTTON_RIGHT, GLFW_PRESS, 0);
+            GLFWDisplay::MouseButtonCallback(d.window_, GLFW_MOUSE_BUTTON_RIGHT, GLFW_RELEASE, 0);
+            Require(!d.themeMenuOpen_ && keys.empty(), "PNG ignores theme menu without instrument events");
             GLFWDisplay::FocusCallback(d.window_, GLFW_FALSE);
             Require(!d.hasCursorPosition_, "focus loss invalidates stale cursor position");
             d.SetKeyEventCallback({});
             if (SvgBackgroundRenderer::Available()) {
+                d.theme_.clear();
+                d.LoadPanel("gui/ui-svg.json");
                 const auto layout = UILayout::Load("gui/ui-svg.json");
-                for (const auto *theme : {"slate", "silver", "yellow", "green", "purple", "orange"}) {
-                    d.theme_ = theme;
-                    d.LoadPanel("gui/ui-svg.json");
-                    Require(d.uiConfig_.screen[0].x == layout.screen[0].x &&
-                                d.uiConfig_.screen[2].y == layout.screen[2].y &&
+                const auto backgroundTexture = d.backgroundTexture_, liveTexture = d.texture_;
+                auto *const sameWindow = d.window_;
+                int lw, lh;
+                glfwGetWindowSize(d.window_, &lw, &lh);
+                const auto openMenu = [&] {
+                    GLFWDisplay::CursorPositionCallback(d.window_, lw - 5, lh - 5);
+                    GLFWDisplay::MouseButtonCallback(d.window_, GLFW_MOUSE_BUTTON_RIGHT, GLFW_PRESS, 0);
+                    GLFWDisplay::MouseButtonCallback(d.window_, GLFW_MOUSE_BUTTON_RIGHT, GLFW_RELEASE, 0);
+                    Require(d.themeMenuOpen_ && !d.dragging_, "right-click opens a non-dragging menu");
+                    Require(d.themeMenuPosition_.x + 220 * d.themeMenuScale_ <= lw &&
+                                d.themeMenuPosition_.y + 244 * d.themeMenuScale_ <= lh,
+                            "popup fits inside the window at its edges");
+                };
+                const auto finishSwitch = [&] {
+                    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(20);
+                    do {
+                        Require(std::chrono::steady_clock::now() < deadline, "theme render completes");
+                        Feed(d, 201, 400); // new framebuffer uploads continue during asynchronous theme rendering
+                        draw();
+                        Check(d);
+                    } while (d.pendingTheme_ || d.themeRender_.valid());
+                    Require(d.window_ == sameWindow && d.backgroundTexture_ == backgroundTexture &&
+                                d.texture_ == liveTexture,
+                            "theme switch reuses the native window and both GL textures");
+                    Require(UIScreenMatrix(d.uiConfig_.screen) == UIScreenMatrix(layout.screen) &&
+                                d.uiConfig_.screenFilter == layout.screenFilter &&
                                 d.uiConfig_.buttons.size() == layout.buttons.size(),
-                            "theme retains display and input layout");
+                            "theme preserves screen geometry, filtering and control count");
+                    for (size_t i = 0; i < layout.buttons.size(); ++i)
+                        Require(d.uiConfig_.buttons[i].gpio == layout.buttons[i].gpio,
+                                "theme switch preserves every GPIO binding");
+                };
+                keys.clear();
+                d.SetKeyEventCallback([&](int bank, int pin, bool down) { keys.emplace_back(bank, pin, down); });
+                const char *presets[] = {"slate", "silver", "yellow", "green", "purple", "orange"};
+                for (int i = 0; i < 6; ++i) {
+                    openMenu();
                     Feed(d, 201, 400);
                     draw();
-                    Check(d);
+                    if (i == 1)
+                        if (const char *capture = std::getenv("OP1_UI_MENU_CAPTURE")) {
+                            int w, h;
+                            const auto pixels = Read(d, w, h);
+                            Require(stbi_write_png(capture, w, h, 4, pixels.data(), w * 4), "menu capture writes");
+                        }
+                    const double x = d.themeMenuPosition_.x + 75 * d.themeMenuScale_;
+                    const double y = d.themeMenuPosition_.y + (53 + i * 34) * d.themeMenuScale_;
+                    GLFWDisplay::CursorPositionCallback(d.window_, x, y);
+                    Require(d.themeMenuHover_ == i, "each menu row maps to its visible palette");
+                    GLFWDisplay::MouseButtonCallback(d.window_, GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, 0);
+                    GLFWDisplay::MouseButtonCallback(d.window_, GLFW_MOUSE_BUTTON_LEFT, GLFW_RELEASE, 0);
+                    Require(!d.themeMenuOpen_ && keys.empty(), "selection click never reaches OP-1 controls");
+                    finishSwitch();
+                    Require(d.theme_ == presets[i] && d.SelectedThemeRow() == i, "selected theme checkmark follows swap");
                 }
-                // A bad palette recovers to the original SVG, with a diagnostic.
-                d.theme_ = "no-such-theme.json";
-                d.LoadPanel("gui/ui-svg.json");
-                Require(bool(d.svg_), "bad theme retains original SVG renderer");
+                openMenu();
+                GLFWDisplay::KeyCallback(d.window_, GLFW_KEY_DOWN, 0, GLFW_PRESS, 0);
+                Require(d.themeMenuHover_ == 0, "keyboard navigation wraps through presets");
+                GLFWDisplay::KeyCallback(d.window_, GLFW_KEY_ENTER, 0, GLFW_PRESS, 0);
+                finishSwitch();
+                Require(d.theme_ == "slate" && keys.empty(), "keyboard selection is isolated from firmware input");
+                openMenu();
+                GLFWDisplay::CursorPositionCallback(d.window_, 0, 0);
+                GLFWDisplay::MouseButtonCallback(d.window_, GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, 0);
+                GLFWDisplay::MouseButtonCallback(d.window_, GLFW_MOUSE_BUTTON_LEFT, GLFW_RELEASE, 0);
+                Require(!d.themeMenuOpen_ && !d.pendingTheme_ && keys.empty(), "outside click dismisses without input");
+                openMenu();
+                GLFWDisplay::FocusCallback(d.window_, GLFW_FALSE);
+                Require(!d.themeMenuOpen_, "focus loss dismisses the popup");
+                d.RequestTheme("purple");
+                draw();
+                Require(d.themeRender_.valid(), "palette rendering runs as an asynchronous job");
+                d.RequestTheme("green");
+                finishSwitch();
+                Require(d.theme_ == "green", "latest theme request wins over a stale render");
+                d.RequestTheme("no-such-theme.json");
+                finishSwitch();
+                Require(d.theme_ == "green" && bool(d.svg_), "bad palette keeps the current theme");
+                d.SetKeyEventCallback({});
                 draw();
                 Check(d);
-                std::cout << "Six themes retain the GL framebuffer and control layout; invalid palette recovers\n";
+                std::cout << "Theme popup: six live swaps, checkmarks, keyboard/outside/focus dismissal, input isolation, "
+                             "texture reuse, live frames, latest-request and failure recovery passed\n";
             }
             std::cout
                 << "GL RGB565, filtering, orientation, projective overlay, state, resize and texture reuse passed\n";

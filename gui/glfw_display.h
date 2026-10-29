@@ -5,8 +5,10 @@
 #include "ui_layout.h"
 #include <GLFW/glfw3.h>
 #include <chrono>
+#include <future>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <vector>
 
 class GLFWDisplay : public Display, public Keyboard {
@@ -39,6 +41,18 @@ class GLFWDisplay : public Display, public Keyboard {
     bool IsControl(UIPoint point) const;
     void RestoreWindowFrame();
     void ResizeFloating(double factor);
+    void OpenThemeMenu(double x, double y);
+    void CloseThemeMenu();
+    void FitThemeMenu(int width, int height);
+    int ThemeMenuRow(double x, double y) const;
+    int SelectedThemeRow() const;
+    void DrawThemeMenu(int width, int height, int fbWidth, int fbHeight);
+    void RequestTheme(const std::string &theme);
+    void UpdateThemeSwitch();
+    struct ThemeRender {
+        std::unique_ptr<SvgBackgroundRenderer> svg;
+        SvgPixels pixels;
+    };
     GLFWwindow *window_ = nullptr;
     GLuint texture_ = 0, backgroundTexture_ = 0;
     std::vector<uint16_t> framebuffer_;
@@ -54,6 +68,16 @@ class GLFWDisplay : public Display, public Keyboard {
     UIPanelInput input_{uiConfig_};
     std::unique_ptr<SvgBackgroundRenderer> svg_;
     std::string theme_;
+    std::future<ThemeRender> themeRender_;
+    std::optional<std::string> pendingTheme_;
+    std::string renderingTheme_;
+    bool themeMenuOpen_ = false, suppressLeftRelease_ = false;
+    UIPoint themeMenuPosition_;
+    double themeMenuScale_ = 1;
+    int themeMenuHover_ = -1, menuTextureWidth_ = 0, menuTextureHeight_ = 0;
+    GLuint menuTexture_ = 0;
+    std::unique_ptr<SvgBackgroundRenderer> menuSvg_;
+    std::array<std::array<float, 3>, 6> themeSwatches_{};
     double artWidth_ = 0, artHeight_ = 0;
     int cachedWidth_ = 0, cachedHeight_ = 0, pendingWidth_ = 0, pendingHeight_ = 0;
     std::chrono::steady_clock::time_point resizeChanged_{};
