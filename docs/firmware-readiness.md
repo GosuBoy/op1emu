@@ -142,6 +142,24 @@ was requested in this closeout. Its artifact is `12920716563`, SHA256
 This closes the previously recorded hosted-Mac gap for that exact revision;
 it does not change the historical cancelled attempts or establish their cause.
 
-New workflow revision CI and artifact comparison results will be recorded here
-separately after that revision executes. Public capture uploads include only
-synthetic sport/codec/stream/debugger/readiness fixtures.
+The subsequent workflow revision
+[8ffdbef0e2547fa25c25bdcc3124f2fbdfebe6be](https://github.com/GosuBoy/op1emu/commit/8ffdbef0e2547fa25c25bdcc3124f2fbdfebe6be)
+has separate [CI 40928202265](https://github.com/GosuBoy/op1emu/actions/runs/40928202265).
+All six jobs pass: Linux OFF 39/39, Linux ON 42/42 and macOS 39/39.
+The independent Blackfin job
+rebuilds all 13 images, including A/B/C; Python and libc++ checks pass.
+The macOS job executed all build/test/upload steps on its first attempt.
+
+All three native artifacts match all 261 logical local files byte for byte, including
+the 14 new capture/diagnosis/identity/debug records. All 247 prior files are
+unchanged relative to the hardened-test macOS artifact. The platform-specific
+native executable hash receipt, command-file metadata and console/build logs
+are separate from guest comparisons. No guest fields or timestamps are
+removed or normalized. Every archive member is a public synthetic fixture;
+private gameplay sources, assets, maps, snapshots and captures are absent.
+
+| New revision artifact | ID | Archive SHA256 |
+|---|---:|---|
+| Linux OFF |12921896644|`c81138d9bfe1cc096a4c512903f4c9e3525c7d0ef9d06a5c22bfbdf8a7f02b6d`|
+| Linux ON |12921282195|`29228a24233420361b0e85d6457c9cd9ac17dca240555411fc735ed752c74764`|
+| macOS OFF |12921921942|`90e3dad8570f607abe6021c6a09040c59ef835f2ef9750d9fc26e5f640566d56`|
