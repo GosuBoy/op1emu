@@ -12,7 +12,7 @@ class Control:
  def receive(self,predicate):
   end=time.monotonic()+10
   while time.monotonic()<end:
-   lines=self.log.read_text().splitlines() if self.log.exists() else []
+   lines=self.log.read_text().split('\n')[:-1] if self.log.exists() else [] # complete responses only
    while self.offset<len(lines):
     line=json.loads(lines[self.offset]);self.offset+=1
     if predicate(line):return line

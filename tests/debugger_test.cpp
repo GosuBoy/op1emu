@@ -83,17 +83,25 @@ int main() try {
             const auto a = range.first, n = range.second;
             Reject([&] { debug.ReadRam(a, n); });
         }
-        mem.AddReadHook(0x2000, [](u32) {
+        unsigned hookReads = 0;
+        mem.AddReadHook(0x2000, [&](u32) {
+            ++hookReads;
             throw std::runtime_error("debug must never call hook");
             return 0;
         });
         Reject([&] { debug.ReadRam(0x2000, 1); });
+        Check(hookReads == 0, "rejection must precede hook invocation");
         struct NoReadWatcher : PageWatcher {
-            void BeforeAccess() override { throw std::runtime_error("inspection invoked DMA settlement"); }
+            unsigned calls = 0;
+            void BeforeAccess() override {
+                ++calls;
+                throw std::runtime_error("inspection invoked DMA settlement");
+            }
             bool HostWorkAfterAccess() const override { return false; }
         } watcher;
         mem.WatchPages(&watcher, {0x4000u >> PAGE_BITS});
         Reject([&] { debug.ReadRam(0x4000, 4); });
+        Check(watcher.calls == 0, "rejection must precede DMA settlement");
         mem.WatchPages(nullptr, {});
         Reject([&] { debug.AddPcStop(0x09000000); });
         Reject([&] { debug.AddPcStop(pc + 1); });
