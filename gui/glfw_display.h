@@ -11,7 +11,7 @@
 
 class GLFWDisplay : public Display, public Keyboard {
   public:
-    explicit GLFWDisplay(const std::string &configPath = "gui/ui.json");
+    explicit GLFWDisplay(const std::string &configPath = "gui/ui.json", bool floating = false);
     ~GLFWDisplay() override;
     void Initialize(int rows, int lines) override;
     void UpdateRowBuffer(int x, int y, const void *data, int length) override;
@@ -35,6 +35,9 @@ class GLFWDisplay : public Display, public Keyboard {
     int MapKeyNameToGLFW(const std::string &name);
     void DrawBackground();
     void DrawScreen();
+    bool IsControl(UIPoint point) const;
+    void RestoreWindowFrame();
+    void ResizeFloating(double factor);
     GLFWwindow *window_ = nullptr;
     GLuint texture_ = 0, backgroundTexture_ = 0;
     std::vector<uint16_t> framebuffer_;
@@ -44,6 +47,8 @@ class GLFWDisplay : public Display, public Keyboard {
     std::mutex framebufferMutex_;
     UIPoint cursorPosition_;
     bool hasCursorPosition_ = false;
+    bool floating_ = false, dragging_ = false;
+    UIPoint dragOffset_;
     UILayout uiConfig_;
     UIPanelInput input_{uiConfig_};
     std::unique_ptr<SvgBackgroundRenderer> svg_;

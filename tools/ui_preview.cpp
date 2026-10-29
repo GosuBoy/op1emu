@@ -80,10 +80,12 @@ class UIPreview {
         return {p[0], p[1], p[2]};
     }
     static int Run(int argc, char **argv) {
-        bool test = argc == 2 && std::string(argv[1]) == "--test";
+        bool test = argc == 2 && (std::string(argv[1]) == "--test" || std::string(argv[1]) == "--test-floating");
+        bool floating = argc > 1 && (std::string(argv[1]) == "--floating" || std::string(argv[1]) == "--test-floating");
+        const int first = floating && !test ? 2 : 1;
         std::string path = test ? (SvgBackgroundRenderer::Available() ? "gui/ui-svg.json" : "gui/ui.json")
-                                : (argc > 1 ? argv[1] : "gui/ui.json");
-        GLFWDisplay d(path);
+                                : (argc > first ? argv[first] : (floating ? "gui/ui-svg.json" : "gui/ui.json"));
+        GLFWDisplay d(path, floating);
         Feed(d, 201, 400); // odd-width upload exercises UNPACK_ALIGNMENT=1
         glPixelStorei(GL_UNPACK_ALIGNMENT, 8);
         glPixelStorei(GL_UNPACK_ROW_LENGTH, 31);
@@ -110,6 +112,90 @@ class UIPreview {
                         dst == GL_ONE,
                     "GL blend/unpack state restoration");
             Check(d);
+            if (floating) {
+                if (d.floating_) {
+                    Require(!glfwGetWindowAttrib(d.window_, GLFW_DECORATED), "floating window has no title bar");
+                    int w, h;
+                    auto pixels = Read(d, w, h);
+                    Require(pixels[3] == 0 && pixels[(size_t(h / 2) * w + w / 2) * 4 + 3] == 255,
+                            "floating window has transparent corners and an opaque body");
+                    std::vector<std::tuple<int, int, bool>> events;
+                    d.SetKeyEventCallback([&](int bank, int pin, bool down) { events.emplace_back(bank, pin, down); });
+                    int lw, lh;
+                    glfwGetWindowSize(d.window_, &lw, &lh);
+                    auto fit = UIFit::Into(d.artWidth_, d.artHeight_, lw, lh);
+                    for (const auto &button : d.uiConfig_.buttons) {
+                        UIPoint p{};
+                        for (auto corner : button.region.polygon) {
+                            p.x += corner.x / button.region.polygon.size();
+                            p.y += corner.y / button.region.polygon.size();
+                        }
+                        events.clear();
+                        GLFWDisplay::CursorPositionCallback(d.window_, fit.x + fit.scale * p.x, fit.y + fit.scale * p.y);
+                        GLFWDisplay::MouseButtonCallback(d.window_, GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, 0);
+                        Require(!d.dragging_, "instrument buttons do not drag the window");
+                        GLFWDisplay::MouseButtonCallback(d.window_, GLFW_MOUSE_BUTTON_LEFT, GLFW_RELEASE, 0);
+                        Require(events == std::vector<std::tuple<int, int, bool>>{{button.gpio.first, button.gpio.second, true},
+                                                                                {button.gpio.first, button.gpio.second, false}},
+                                "floating window preserves every button event");
+                    }
+                    const auto clickRegion = [&](const UIRegion &region) {
+                        UIPoint p{};
+                        for (auto corner : region.polygon) {
+                            p.x += corner.x / region.polygon.size();
+                            p.y += corner.y / region.polygon.size();
+                        }
+                        GLFWDisplay::CursorPositionCallback(d.window_, fit.x + fit.scale * p.x, fit.y + fit.scale * p.y);
+                        GLFWDisplay::MouseButtonCallback(d.window_, GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, 0);
+                        Require(!d.dragging_, "encoders and volume do not drag the window");
+                        GLFWDisplay::MouseButtonCallback(d.window_, GLFW_MOUSE_BUTTON_LEFT, GLFW_RELEASE, 0);
+                    };
+                    for (const auto &encoder : d.uiConfig_.encoders) {
+                        events.clear();
+                        clickRegion(encoder.clockwise);
+                        clickRegion(encoder.counterClockwise);
+                        Require(events.size() == 4, "floating encoders retain both quadrature directions");
+                    }
+                    const auto volume = d.GetVolumeValue();
+                    clickRegion(d.uiConfig_.volumeUp);
+                    Require(d.GetVolumeValue() == volume + 5, "floating volume knob increases volume");
+                    clickRegion(d.uiConfig_.volumeDown);
+                    Require(d.GetVolumeValue() == volume, "floating volume knob decreases volume");
+                    events.clear();
+                    int wx, wy, movedX, movedY;
+                    glfwGetWindowPos(d.window_, &wx, &wy);
+                    const double x = fit.x + fit.scale * d.artWidth_ / 2, y = fit.y + fit.scale * 8;
+                    GLFWDisplay::CursorPositionCallback(d.window_, x, y);
+                    GLFWDisplay::MouseButtonCallback(d.window_, GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, 0);
+                    Require(d.dragging_, "unbound casing starts a window drag");
+                    GLFWDisplay::CursorPositionCallback(d.window_, x + 16, y + 12);
+                    glfwPollEvents();
+                    glfwGetWindowPos(d.window_, &movedX, &movedY);
+                    Require(std::abs(movedX - wx - 16) <= 1 && std::abs(movedY - wy - 12) <= 1,
+                            "casing drag moves the native window");
+                    GLFWDisplay::MouseButtonCallback(d.window_, GLFW_MOUSE_BUTTON_LEFT, GLFW_RELEASE, 0);
+                    Require(!d.dragging_ && events.empty(), "window drag releases without instrument input");
+                    GLFWDisplay::KeyCallback(d.window_, GLFW_KEY_EQUAL, 0, GLFW_PRESS, GLFW_MOD_CONTROL);
+                    glfwPollEvents();
+                    int resizedWidth, resizedHeight;
+                    glfwGetWindowSize(d.window_, &resizedWidth, &resizedHeight);
+                    Require(resizedWidth > lw && std::abs(double(resizedWidth) / resizedHeight - d.artWidth_ / d.artHeight_) < .02,
+                            "floating keyboard resize preserves the panel aspect");
+                    GLFWDisplay::KeyCallback(d.window_, GLFW_KEY_W, 0, GLFW_PRESS, GLFW_MOD_CONTROL);
+                    Require(d.ShouldClose(), "floating close shortcut works");
+                    glfwSetWindowShouldClose(d.window_, GLFW_FALSE);
+                    GLFWDisplay::KeyCallback(d.window_, GLFW_KEY_ESCAPE, 0, GLFW_PRESS, 0);
+                    d.SetKeyEventCallback({});
+                    std::cout << "Floating alpha, all buttons, native drag, resize and recovery passed\n";
+                } else
+                    std::cout << "Floating unavailable; standard-window fallback checked\n";
+                Require(!d.floating_ && glfwGetWindowAttrib(d.window_, GLFW_DECORATED),
+                        "Escape or unavailable transparency retains a standard window");
+                draw();
+                int w, h;
+                auto pixels = Read(d, w, h);
+                Require(pixels[3] == 255, "standard-window recovery restores the opaque background");
+            }
             // A magnified 2x2 RGB565 frame has a gray center with bilinear
             // sampling and a pure source color with nearest. Switch without
             // another frame upload to exercise draw-time filter selection.
@@ -189,10 +275,10 @@ class UIPreview {
             d.SetKeyEventCallback({});
             std::cout
                 << "GL RGB565, filtering, orientation, projective overlay, state, resize and texture reuse passed\n";
-        } else if (argc > 2) {
+        } else if (argc > first + 1) {
             int w, h;
             auto pixels = Read(d, w, h);
-            Require(stbi_write_png(argv[2], w, h, 4, pixels.data(), w * 4), "capture write failed");
+            Require(stbi_write_png(argv[first + 1], w, h, 4, pixels.data(), w * 4), "capture write failed");
             std::cout << w << 'x' << h << " capture written\n";
         } else
             while (!d.ShouldClose()) {

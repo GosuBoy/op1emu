@@ -266,3 +266,33 @@ Hosted macOS CI probes context availability and explicitly reports a skipped GL
 runtime check when its VM cannot provide one; Linux CI runs the GL assertions
 under Xvfb. The macOS GL runtime was also verified on the local arm64 desktop.
 See the [visual comparison and verification record](docs/visual-comparisons/resvg-frontend/README.md).
+
+On the `experiment/floating-svg-ui` branch, try the optional body-only window:
+
+```bash
+./build/op1emu path/to/nand.bin --ui=svg --floating-ui
+```
+
+The SVG's transparent corners show the desktop, with no title bar. Drag an
+unused part of the casing to move it; buttons, encoders and volume keep their
+normal controls. **Escape restores the title bar.** Cmd/Ctrl with `+` or `-`
+resizes, with `M` minimizes and with `W` closes. The window preserves the panel's
+aspect ratio and is not made always-on-top. PNG fallback or unavailable desktop
+transparency restores a normal window. This experiment has been verified locally
+on macOS; compositor and window-positioning support varies on Linux/Wayland.
+macOS may still display its own screen-sharing indicator during window sharing.
+
+Firmware-free checks and transparent capture:
+
+```bash
+./build/op1-ui-preview --test-floating
+./build/op1-ui-preview --floating gui/ui-svg.json floating-panel.png
+```
+
+The PR branch `feature/resvg-svg-ui` is the rollback point. Omitting
+`--floating-ui` runs the normal window even on the experiment branch.
+Local macOS validation passed all 22 CTests, the normal OpenGL harness, and
+the floating harness's transparency, all-button, encoder, volume, native-drag,
+resize, close and title-bar recovery checks. The PNG-only build also passed
+its normal rendering and floating-request fallback checks. A local firmware-246
+session booted to the live Tape screen in the borderless window.

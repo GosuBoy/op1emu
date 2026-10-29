@@ -12,11 +12,23 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 
-GLFWDisplay::GLFWDisplay(const std::string &configPath) {
+GLFWDisplay::GLFWDisplay(const std::string &configPath, bool floating) : floating_(floating) {
     if (!glfwInit())
         throw std::runtime_error("Failed to initialize GLFW");
     try {
+        glfwDefaultWindowHints();
+        if (floating_) {
+            glfwWindowHint(GLFW_DECORATED, GLFW_FALSE);
+            glfwWindowHint(GLFW_TRANSPARENT_FRAMEBUFFER, GLFW_TRUE);
+            glfwWindowHint(GLFW_ALPHA_BITS, 8);
+        }
         window_ = glfwCreateWindow(640, 480, "OP1 Emulator", nullptr, nullptr);
+        if (!window_ && floating_) {
+            std::cerr << "Floating window creation failed; using a standard window\n";
+            floating_ = false;
+            glfwDefaultWindowHints();
+            window_ = glfwCreateWindow(640, 480, "OP1 Emulator", nullptr, nullptr);
+        }
         if (!window_)
             throw std::runtime_error("Failed to create GLFW window");
         glfwMakeContextCurrent(window_);
@@ -40,6 +52,15 @@ GLFWDisplay::GLFWDisplay(const std::string &configPath) {
         }
         glfwSetWindowSize(window_, std::max(1, int(artWidth_ * uiConfig_.scale)),
                           std::max(1, int(artHeight_ * uiConfig_.scale)));
+        if (floating_) {
+            if (!svg_ || !glfwGetWindowAttrib(window_, GLFW_TRANSPARENT_FRAMEBUFFER)) {
+                std::cerr << "Floating UI needs SVG artwork and desktop transparency; using a standard window\n";
+                RestoreWindowFrame();
+            } else {
+                glfwSetWindowAspectRatio(window_, std::max(1, int(std::lround(artWidth_))),
+                                         std::max(1, int(std::lround(artHeight_))));
+            }
+        }
     } catch (...) {
         Cleanup();
         throw;
@@ -247,7 +268,10 @@ void GLFWDisplay::RenderFramebuffer(bool present) {
         }
     }
     glViewport(0, 0, fw, fh);
-    glClearColor(.12f, .12f, .12f, 1);
+    if (floating_)
+        glClearColor(0, 0, 0, 0);
+    else
+        glClearColor(.12f, .12f, .12f, 1);
     glClear(GL_COLOR_BUFFER_BIT);
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_CULL_FACE);
@@ -286,10 +310,38 @@ void GLFWDisplay::SwapBuffers() {
         glfwSwapBuffers(window_);
 }
 void GLFWDisplay::SetDisplayRotation(int degrees) { rotation_ = (degrees % 360 + 360) % 360; }
+bool GLFWDisplay::IsControl(UIPoint point) const {
+    for (const auto &b : uiConfig_.buttons)
+        if (b.region.Contains(point))
+            return true;
+    for (const auto &e : uiConfig_.encoders)
+        if (e.clockwise.Contains(point) || e.counterClockwise.Contains(point))
+            return true;
+    return uiConfig_.volumeUp.Contains(point) || uiConfig_.volumeDown.Contains(point);
+}
+void GLFWDisplay::RestoreWindowFrame() {
+    floating_ = dragging_ = false;
+    glfwSetWindowAttrib(window_, GLFW_DECORATED, GLFW_TRUE);
+    glfwSetWindowAspectRatio(window_, GLFW_DONT_CARE, GLFW_DONT_CARE);
+}
+void GLFWDisplay::ResizeFloating(double factor) {
+    int width, height;
+    glfwGetWindowSize(window_, &width, &height);
+    const int base = std::max(4, int(std::lround(artWidth_ * uiConfig_.scale)));
+    width = std::clamp(int(std::lround(width * factor)), base / 4, base * 3);
+    height = std::max(1, int(std::lround(width * artHeight_ / artWidth_)));
+    glfwSetWindowSize(window_, width, height);
+}
 void GLFWDisplay::CursorPositionCallback(GLFWwindow *w, double x, double y) {
     auto *self = static_cast<GLFWDisplay *>(glfwGetWindowUserPointer(w));
     self->cursorPosition_ = {x, y};
     self->hasCursorPosition_ = true;
+    if (self->dragging_) {
+        int wx, wy;
+        glfwGetWindowPos(w, &wx, &wy);
+        glfwSetWindowPos(w, wx + int(std::lround(x - self->dragOffset_.x)),
+                         wy + int(std::lround(y - self->dragOffset_.y)));
+    }
 }
 void GLFWDisplay::MouseButtonCallback(GLFWwindow *w, int button, int action, int) {
     if (button != GLFW_MOUSE_BUTTON_LEFT || (action != GLFW_PRESS && action != GLFW_RELEASE))
@@ -306,15 +358,47 @@ void GLFWDisplay::MouseButtonCallback(GLFWwindow *w, int button, int action, int
         glfwGetCursorPos(w, &x, &y);
     }
     glfwGetWindowSize(w, &width, &height);
-    if (action == GLFW_RELEASE)
+    if (action == GLFW_RELEASE) {
+        self->dragging_ = false;
         self->input_.Mouse(false, {});
-    else if (width > 0 && height > 0)
-        self->input_.Mouse(true, UIFit::Into(self->artWidth_, self->artHeight_, width, height).ToArt({x, y}));
+    } else if (width > 0 && height > 0) {
+        const auto point = UIFit::Into(self->artWidth_, self->artHeight_, width, height).ToArt({x, y});
+        if (self->floating_ && point.x >= 0 && point.y >= 0 && point.x <= self->artWidth_ &&
+            point.y <= self->artHeight_ && !self->IsControl(point)) {
+            self->dragging_ = true;
+            self->dragOffset_ = {x, y};
+        } else
+            self->input_.Mouse(true, point);
+    }
 }
-void GLFWDisplay::KeyCallback(GLFWwindow *w, int key, int, int action, int) {
+void GLFWDisplay::KeyCallback(GLFWwindow *w, int key, int, int action, int mods) {
     if (action != GLFW_PRESS && action != GLFW_RELEASE)
         return;
     auto *self = static_cast<GLFWDisplay *>(glfwGetWindowUserPointer(w));
+    if (self->floating_ && action == GLFW_PRESS) {
+        if (key == GLFW_KEY_ESCAPE) {
+            self->RestoreWindowFrame();
+            return;
+        }
+        if (mods & (GLFW_MOD_SUPER | GLFW_MOD_CONTROL)) {
+            if (key == GLFW_KEY_W) {
+                glfwSetWindowShouldClose(w, GLFW_TRUE);
+                return;
+            }
+            if (key == GLFW_KEY_M) {
+                glfwIconifyWindow(w);
+                return;
+            }
+            if (key == GLFW_KEY_EQUAL || key == GLFW_KEY_KP_ADD) {
+                self->ResizeFloating(1.1);
+                return;
+            }
+            if (key == GLFW_KEY_MINUS || key == GLFW_KEY_KP_SUBTRACT) {
+                self->ResizeFloating(1 / 1.1);
+                return;
+            }
+        }
+    }
     for (auto &k : self->uiConfig_.keys)
         if (key == self->MapKeyNameToGLFW(k.name)) {
             self->input_.Key(key, k.gpio, action == GLFW_PRESS);
@@ -326,6 +410,7 @@ void GLFWDisplay::FocusCallback(GLFWwindow *w, int focused) {
         auto *self = static_cast<GLFWDisplay *>(glfwGetWindowUserPointer(w));
         self->input_.ReleaseAll();
         self->hasCursorPosition_ = false;
+        self->dragging_ = false;
     }
 }
 int GLFWDisplay::MapKeyNameToGLFW(const std::string &keyName) {
