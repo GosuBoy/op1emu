@@ -33,8 +33,9 @@ adds explicit zero hook/settlement-callback assertions and complete-line
 response parsing. Its emulator/debugger implementation is unchanged.
 [CI 40916758992](https://github.com/GosuBoy/op1emu/actions/runs/40916758992)
 has successful Linux OFF 38/38, Linux ON 41/41, fixture, Python and libc++
-results. The first queued macOS job was cancelled before any steps ran;
-the isolated retry remains queued as of 2026-10-29 17:31 UTC. The implementation's
+results. The initial macOS job and its isolated retry were both cancelled before any
+steps ran. The final test-only macOS check remains unexecuted; the available
+results do not establish the cancellation cause. The implementation's
 successful macOS run and final local Apple-silicon tests remain separate
 evidence; a queued job is not reported as a passing check.
 
