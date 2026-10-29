@@ -1005,7 +1005,33 @@ static void Mcp23017SequentialWrite(bool oneByteAtATime) {
     Require(gpio->GetDirection(8) == GPIOPinDirection::Input, "IODIRB gets the second");
 }
 
+static void TwiObservesResponses() {
+    TimeSource time(true);
+    TWI twi(0xFFC01400, &time);
+    twi.AttachPeripheral(std::make_shared<DummyI2CPeripheral>(0x20, 0x5a));
+    struct Event { u8 address; bool read; std::vector<u8> data; bool ack, stop; };
+    std::vector<Event> events;
+    twi.SetObserver([&](u8 a, bool read, const std::vector<u8>& data, bool ack, bool stop) {
+        events.push_back({a, read, data, ack, stop});
+    });
+    twi.Write32(0, 0x0c0c); twi.Write32(4, 0x80); twi.Write32(0x1c, 0x20);
+    twi.Write32(0x14, 1 << 6 | 5);
+    time.Retire(40000); twi.ProcessWithInterrupt(-1);
+    Require(events.size() == 2 && events[0].read && events[0].data == std::vector<u8>{0x5a} && events[0].ack &&
+            events[1].stop && events[1].ack, "I2C observer records actual response and STOP");
+    Require(twi.Read32(0x88) == 0x5a, "observation does not consume guest receive data");
+    twi.Write32(0x20, 0xffff); twi.Write32(0x84, 0x3412); twi.Write32(0x14, 2 << 6 | 1);
+    time.Retire(40000); twi.ProcessWithInterrupt(-1);
+    Require(events.size() == 5 && !events[2].read && events[2].data == std::vector<u8>{0x12} &&
+            events[3].data == std::vector<u8>{0x34} && events[4].stop, "I2C observer preserves byte order and write completion");
+    twi.Write32(0x20, 0xffff); twi.Write32(0x1c, 0x7f); twi.Write32(0x14, 1 << 6 | 5);
+    time.Retire(40000); twi.ProcessWithInterrupt(-1);
+    Require(events.back().address == 0x7f && events.back().stop && !events.back().ack &&
+            (twi.Read32(0x18) & 4), "I2C observer reports missing-address failure without fabricating bytes");
+}
+
 int main() {
+    TwiObservesResponses();
     Mcp23017SequentialWrite(false);
     Mcp23017SequentialWrite(true);
     for (uint32_t seed = 1; seed <= 10; ++seed) TwiIgnoresBlockBoundaries(seed);

@@ -45,6 +45,7 @@ uint8_t EmulatorMemory::read8(uint32_t addr) const {
     PROFILE_ACCESS(addr, 0, false);
     bool hostWork, stable;
     const uint8_t value = emulator_.ReadAttended<uint8_t>(addr, hostWork, stable);
+    if (observer_) observer_(addr, 1, false, value);
     Attend(hostWork);
     if (!stable && unstableReads_) ++*unstableReads_;
     return value;
@@ -54,6 +55,7 @@ uint16_t EmulatorMemory::read16(uint32_t addr) const {
     PROFILE_ACCESS(addr, 1, false);
     bool hostWork, stable;
     const uint16_t value = emulator_.ReadAttended<uint16_t>(addr, hostWork, stable);
+    if (observer_) observer_(addr, 2, false, value);
     Attend(hostWork);
     if (!stable && unstableReads_) ++*unstableReads_;
     return value;
@@ -63,6 +65,7 @@ uint32_t EmulatorMemory::read32(uint32_t addr) const {
     PROFILE_ACCESS(addr, 2, false);
     bool hostWork, stable;
     const uint32_t value = emulator_.ReadAttended<uint32_t>(addr, hostWork, stable);
+    if (observer_) observer_(addr, 4, false, value);
     Attend(hostWork);
     if (!stable && unstableReads_) ++*unstableReads_;
     return value;
@@ -72,6 +75,7 @@ void EmulatorMemory::write8(uint32_t addr, uint8_t val) {
     PROFILE_ACCESS(addr, 0, true);
     bool hostWork;
     emulator_.WriteAttended<uint8_t>(addr, val, hostWork);
+    if (observer_) observer_(addr, 1, true, val);
     Attend(hostWork);
 }
 
@@ -79,6 +83,7 @@ void EmulatorMemory::write16(uint32_t addr, uint16_t val) {
     PROFILE_ACCESS(addr, 1, true);
     bool hostWork;
     emulator_.WriteAttended<uint16_t>(addr, val, hostWork);
+    if (observer_) observer_(addr, 2, true, val);
     Attend(hostWork);
 }
 
@@ -86,6 +91,7 @@ void EmulatorMemory::write32(uint32_t addr, uint32_t val) {
     PROFILE_ACCESS(addr, 2, true);
     bool hostWork;
     emulator_.WriteAttended<uint32_t>(addr, val, hostWork);
+    if (observer_) observer_(addr, 4, true, val);
     Attend(hostWork);
 }
 

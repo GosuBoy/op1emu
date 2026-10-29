@@ -62,6 +62,23 @@ void OLED::WriteToBus(u32 value) const {
 }
 
 bool OLED::SetPinInput(int pin, GPIOPinLevel level) {
+    if (ddb_ && pin >= CS_PIN && pin <= WR_PIN) {
+        const bool high = level == GPIOPinLevel::High;
+        const bool falling = levels_[pin] && !high, changed = levels_[pin] != high;
+        levels_[pin] = high;
+        if (pin == CS_PIN && changed) { ddbActive_ = false; ddbIndex_ = 0; }
+        if (!levels_[CS_PIN] && pin == WR_PIN && falling && !levels_[RS_PIN]) {
+            ddbActive_ = ReadFromBus() == 0x00a1;
+            ddbIndex_ = 0;
+        }
+        if (!levels_[CS_PIN] && pin == RD_PIN && ddbActive_) {
+            if (falling && levels_[RS_PIN] && ddbIndex_ < ddb_->size()) {
+                WriteToBus((*ddb_)[ddbIndex_++]);
+                if (observer_) observer_(true, 0xa1, false, ReadFromBus());
+            }
+            return true; // held-low/exhausted reads do not invent another byte
+        }
+    }
     if (pin == CS_PIN) {
         chipSelection = (level == GPIOPinLevel::Low); // Active low
         if (!chipSelection) {
@@ -89,6 +106,7 @@ bool OLED::SetPinInput(int pin, GPIOPinLevel level) {
                     // No register selected
                     LogDebug("OLED: No register selected for data read");
                 }
+                if (observer_) observer_(true, command_, selectedRegister != nullptr, ReadFromBus());
             }
         }
         return true;
@@ -99,10 +117,10 @@ bool OLED::SetPinInput(int pin, GPIOPinLevel level) {
             // Perform write operation
             if (registerSelection) {
                 // Register select
+                command_ = data;
                 auto iter = registers.find(data);
-                if (iter != registers.end()) {
-                    selectedRegister = &iter->second;
-                }
+                selectedRegister = iter == registers.end() ? nullptr : &iter->second;
+                if (observer_) observer_(false, command_, selectedRegister != nullptr, data);
             } else {
                 // Data write
                 if (selectedRegister) {

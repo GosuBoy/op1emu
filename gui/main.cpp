@@ -1,5 +1,6 @@
 #include "loader/ldr.h"
 #include "loader/load_dxe.h"
+#include "cpu/startup_trace.h"
 #include "cpu/cpu.h"
 #include "cpu/twi.h"
 #include "peripheral/MT29F4G08.h"
@@ -38,18 +39,38 @@ static void StopSigHandler(int) {
     cpuShouldStop.store(true);
 }
 
-void LdrExecutionThread(BlackFinCpu& cpu, const LDRParser& parser) {
+struct ExecutionControl {
+    uint64_t maxCycles = 0, maxPackets = 0;
+    StartupTrace* trace = nullptr;
+    std::string reason = "external_stop";
+    bool limited = false;
+    bool Before(BlackFinCpu& cpu) {
+        if ((maxCycles && cpu.Time().Cycles() >= maxCycles) || (maxPackets && cpu.Time().Packets() >= maxPackets)) {
+            reason = maxCycles && cpu.Time().Cycles() >= maxCycles ? "cycle_limit" : "packet_limit";
+            limited = true;
+            cpuShouldStop.store(true);
+            return false;
+        }
+        if (trace) trace->BeforeRun();
+        return true;
+    }
+};
+
+void LdrExecutionThread(BlackFinCpu& cpu, const LDRParser& parser, ExecutionControl& control) {
     const auto& dxes = parser.getDXEs();
     for (const auto& dxe : dxes) {
+        control.reason = "external_stop";
         LoadDXE(cpu, dxe);
         LogInfo("Start executing DXE");
 
         while (!cpuShouldStop.load()) {
+            if (!control.Before(cpu)) break;
             cpu.Run();
             if (cpu.Failed()) cpuShouldStop.store(true);
 
             if (cpu.PC() == kLdrReturnAddress) {
                 LogInfo("Finished executing DXE");
+                control.reason = "ldr_return";
                 break;
             }
             if (cpu.PC() == 0xffa06e54) {
@@ -68,9 +89,10 @@ void LdrExecutionThread(BlackFinCpu& cpu, const LDRParser& parser) {
     LogInfo("CPU thread exiting");
 }
 
-void BootExcutionThread(BlackFinCpu& cpu) {
+void BootExcutionThread(BlackFinCpu& cpu, ExecutionControl& control) {
     cpu.SetPC(0xEF000000); // Boot entry point
     while (!cpuShouldStop.load()) {
+        if (!control.Before(cpu)) break;
         cpu.Run();
         if (cpu.Failed()) cpuShouldStop.store(true);
     }
@@ -93,6 +115,10 @@ static int RunEmulator(int argc, char* argv[]) {
     bool sportTransport = false;
     u32 sportClockHz = 0, sportFrameClocks = 64;
     std::string sportCapture;
+    std::string diagnosticsPrefix;
+    std::optional<std::array<u8, 5>> syntheticPanelDdb;
+    std::vector<std::pair<uint32_t, uint32_t>> diagnosticMemory;
+    ExecutionControl execution;
     std::optional<long long> rtcEpoch;
     unsigned twiSpeedup = TWI::kDefaultSpeedup;
     unsigned audioBufferMs = MiniaudioOutput::kDefaultBufferMs;
@@ -164,6 +190,41 @@ static int RunEmulator(int argc, char* argv[]) {
         else if (options && arg == "--sport-tx-capture") {
             if (++i == argc || !*argv[i]) throw std::runtime_error("--sport-tx-capture requires a file prefix");
             sportCapture = argv[i];
+        }
+        else if (options && arg == "--diagnostics") {
+            if (++i == argc || !*argv[i]) throw std::runtime_error("--diagnostics requires a private output prefix");
+            diagnosticsPrefix = argv[i];
+        }
+        else if (options && arg == "--synthetic-panel-ddb") {
+            if (++i == argc) throw std::runtime_error("--synthetic-panel-ddb requires five hex bytes (10 hex digits)");
+            const std::string hex = argv[i];
+            if (hex.size() != 10 || hex.find_first_not_of("0123456789abcdefABCDEF") != std::string::npos)
+                throw std::runtime_error("--synthetic-panel-ddb requires exactly 10 hex digits");
+            std::array<u8, 5> bytes;
+            for (unsigned n = 0; n < bytes.size(); ++n) bytes[n] = std::stoul(hex.substr(n * 2, 2), nullptr, 16);
+            syntheticPanelDdb = bytes;
+        }
+        else if (options && (arg == "--max-cycles" || arg == "--max-packets" || arg == "--diagnostics-memory")) {
+            if (++i == argc) throw std::runtime_error(arg + " requires a value");
+            auto number = [&](const std::string& text) -> uint64_t {
+                size_t used = 0;
+                if (text.empty() || text[0] == '-' || text[0] == '+') throw std::runtime_error("invalid " + arg);
+                const auto n = std::stoull(text, &used, 0);
+                if (used != text.size()) throw std::runtime_error("invalid " + arg);
+                return n;
+            };
+            const std::string value = argv[i];
+            if (arg == "--diagnostics-memory") {
+                const auto colon = value.find(':');
+                if (colon == std::string::npos) throw std::runtime_error("--diagnostics-memory requires ADDRESS:BYTES");
+                const auto address = number(value.substr(0, colon)), bytes = number(value.substr(colon + 1));
+                if (address > UINT32_MAX || !bytes || bytes > 1024 * 1024) throw std::runtime_error("invalid diagnostic range");
+                diagnosticMemory.emplace_back(address, bytes);
+            } else {
+                const auto n = number(value);
+                if (!n) throw std::runtime_error(arg + " requires a positive limit");
+                (arg == "--max-cycles" ? execution.maxCycles : execution.maxPackets) = n;
+            }
         }
         else if (options && arg == "--no-chain") noChain = true;
         else if (options && arg == "--no-loop-blocks") noLoopBlocks = true;
@@ -280,6 +341,11 @@ static int RunEmulator(int argc, char* argv[]) {
                      "                        pace: repeatable runs, for measurement and tests\n"
                      "  --rtc-epoch SECONDS   RTC time at boot (default: the host's; 2024-01-01\n"
                      "                        with --deterministic)\n"
+                     "  --max-cycles N        Stop at a guest cycle limit (checked between runs; exit 124)\n"
+                     "  --max-packets N       Stop at a retired packet limit (exit 124)\n"
+                     "  --diagnostics PREFIX  Bounded startup events and final state; may contain private guest data\n"
+                     "  --synthetic-panel-ddb HEX10  Explicit five-byte panel test reply; physical identity unverified\n"
+                     "  --diagnostics-memory ADDRESS:BYTES  Also dump a mapped RAM range (at most 1 MiB)\n"
                      "  --no-chain            Return to the host after every guest block\n"
                      "  --no-idle-wait        Run an IDLE as a NOP instead of\n"
                      "                        letting guest time pass to the next wakeup\n"
@@ -392,6 +458,18 @@ static int RunEmulator(int argc, char* argv[]) {
         }
     }
     cpu.SetTwiSpeedup(twiSpeedup);
+    if (syntheticPanelDdb) {
+        cpu.SetSyntheticPanelDdb(*syntheticPanelDdb);
+        std::cerr << "Synthetic panel DDB profile selected; physical panel identity unverified; results are conditional on this profile\n";
+    }
+    if (!diagnosticMemory.empty() && diagnosticsPrefix.empty())
+        throw std::runtime_error("--diagnostics-memory requires --diagnostics");
+    std::unique_ptr<StartupTrace> startup;
+    if (!diagnosticsPrefix.empty()) {
+        startup = std::make_unique<StartupTrace>(cpu, diagnosticsPrefix);
+        for (auto [address, bytes] : diagnosticMemory) startup->AddMemory(address, bytes);
+        execution.trace = startup.get();
+    }
     // An LDR runs with the host looking at the PC after every block
     // (LdrExecutionThread).
     if (chainDry && noChain) throw std::runtime_error("--profile-chain-dry checks chaining: not with --no-chain");
@@ -531,10 +609,10 @@ static int RunEmulator(int argc, char* argv[]) {
     // Start CPU execution thread
     std::thread cpuThread;
     if (positional.size() > 1) {
-        cpuThread = std::thread(LdrExecutionThread, std::ref(cpu), std::ref(parser));
+        cpuThread = std::thread(LdrExecutionThread, std::ref(cpu), std::ref(parser), std::ref(execution));
     } else {
         // If no LDR file is provided, just run the CPU without loading any code
-        cpuThread = std::thread(BootExcutionThread, std::ref(cpu));
+        cpuThread = std::thread(BootExcutionThread, std::ref(cpu), std::ref(execution));
     }
 
     // Main thread handles GLFW display or headless input. cpuShouldStop is in
@@ -562,6 +640,8 @@ static int RunEmulator(int argc, char* argv[]) {
         LogError("Emulation stopped: CPU execution failed");
         result = 1;
     }
+    if (execution.limited) result = 124;
+    if (startup) startup->Finish(cpu.Failed() ? "cpu_failed" : execution.reason);
 #ifdef ENABLE_PROFILING
     if (profiler && !profiler->Finish()) {
         LogError("Profiling output is incomplete");

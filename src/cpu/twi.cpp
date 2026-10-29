@@ -239,6 +239,7 @@ void TWI::MoveBytes(size_t limit) {
             auto client = iter->second;
             std::vector<u8> data(bytesRead);
             bool success = client->Read(data.data(), bytesRead);
+            if (observer_) observer_(masterAddr, true, data, success, false);
             if (!success) {
                 masterBufferReadError = true;
                 masterTransferError = true;
@@ -282,6 +283,7 @@ void TWI::MoveBytes(size_t limit) {
             }
             auto client = iter->second;
             bool success = client->Write(data.data(), data.size());
+            if (observer_) observer_(masterAddr, false, data, success, false);
             if (!success) {
                 masterBufferWriteError = true;
                 masterTransferError = true;
@@ -303,6 +305,7 @@ void TWI::MoveBytes(size_t limit) {
     }
     if ((masterTransferComplete && !masterRepeatStart) || masterTransferError) {
         masterEnable = false;
+        if (observer_) observer_(masterAddr, masterRead, {}, !masterTransferError, true);
         auto iter = clients.find(masterAddr);
         if (iter != clients.end()) {
             iter->second->Stop();

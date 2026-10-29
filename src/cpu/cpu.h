@@ -59,6 +59,7 @@ namespace profiling { struct ServiceStats; struct MemoryCensus; }
 class BcoreEventSink;
 
 class BlackFinCpu : public CpuInterface {
+    friend class StartupTrace;
 public:
     // deterministic: as fast as the host allows, not paced to its clock; see
     // TimeSource.
@@ -178,6 +179,7 @@ public:
     // Before running. No external TX clock unless explicitly supplied.
     void ConfigureSportTxTransport(u32 syntheticBitHz = 0, u32 frameClocks = 64);
     void SetSportTxWordCallback(std::function<void(int, const SportTxTransport::Word&)> callback);
+    void SetSyntheticPanelDdb(const std::array<u8, 5>& reply);
 
     // True once the JIT could not translate or run a block. The CPU state is
     // then no longer advancing, so the host should stop instead of retrying.

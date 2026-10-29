@@ -93,17 +93,23 @@ CPU chaining policies and normal CLI captures; CI independently rebuilds it
 from pinned GNU Binutils sources. See [guest validation](sport-guest-validation.md).
 
 Private R4 finite-audio diagnostic executables, source context and boot inputs
-have now been recovered and hashed outside this repository. The exact pinned
-Linux compiler executables and complete updater patch/build workspace remain
-missing. No audible OP-Doom gameplay image has been identified. Private startup
-has not been run; codec identity/clock routing and physical output remain
-unverified. No proprietary inputs are added to this repository.
+have been recovered and hashed outside this repository. Unchanged startup now
+has a preserved baseline and repeated bounded observations: default panel
+identification fails; an explicitly selected synthetic reply reaches the audio
+entry but encounters a board-control admission refusal before codec I2C or
+SPORT/DMA initialization. See [startup diagnostics](startup-diagnostics.md) for
+the public reproduction approach, trace limits and exact unresolved register
+semantics. The physical panel identity, board clocks and codec output remain
+unverified. The pinned Linux compiler executables and full updater workspace
+remain separate rebuild dependencies. Private inputs and evidence stay outside
+this repository and CI.
 
 ## Next development milestones
 
-1. Connect evidenced codec state and board clock routing to the transport;
-   then run the recovered hardware-intended initialization without forcing
-   clocks through the CLI and compare clock/FS/DMA observations with hardware.
+1. Resolve the reserved Port G hysteresis readback/initialization-order
+   prerequisite exposed by unchanged startup. Then connect evidenced codec
+   state and board clock routing to the transport and compare clock/FS/DMA
+   observations with hardware, without forcing clocks through the CLI.
    Resolve the remaining private build dependencies for an exact rebuild.
 2. Qualify DMA prefetch/SYNC completion, descriptor timing and codec controls
    needed by that fixture; extend the bounded transport only where evidenced.

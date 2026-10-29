@@ -33,6 +33,8 @@ public:
     u32 Take(u32 bytes) const;
     u32 Accept(const void* data, u32 bytes);
     Snapshot Inspect();
+    struct ExternalInputs { u32 bitHz, frameClocks; bool clock, sync; };
+    ExternalInputs InspectExternalInputs() const { return {externalHz_, externalFrameClocks_, clockPresent_, syncPresent_}; }
 
     // Synthetic input, never inferred from a dummy I2C ACK. frameClocks is
     // the full LRCLK period for stereo, or the TFS period for normal framing.

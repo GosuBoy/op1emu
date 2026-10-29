@@ -5,6 +5,8 @@
 #include <vector>
 #include <array>
 #include <map>
+#include <functional>
+#include <optional>
 
 class OLED : public GPIOPeripheral {
 public:
@@ -16,6 +18,11 @@ public:
     bool SetPinInput(int pin, GPIOPinLevel level) override;
     GPIOPinLevel GetPinOutput(int pin) const override;
     int GetPinCount() const override;
+    using Observer = std::function<void(bool, u32, bool, u32)>; // read, command, supported, bus value
+    void SetObserver(Observer observer) { observer_ = std::move(observer); }
+    // Explicit test profile only. No identified panel, ROM or reset wiring.
+    void SetSyntheticDdb(std::array<u8, 5> reply) { ddb_ = reply; levels_.fill(true); ddbActive_ = false; ddbIndex_ = 0; }
+    const std::optional<std::array<u8, 5>>& SyntheticDdb() const { return ddb_; }
 
 protected:
     u32 ReadFromBus() const;
@@ -30,4 +37,10 @@ protected:
 
     std::array<GPIOConnection, DATA_PINS> dataBus;
     Register* selectedRegister = nullptr;
+    u32 command_ = 0;
+    Observer observer_;
+    std::optional<std::array<u8, 5>> ddb_;
+    std::array<bool, 4> levels_{{true, true, true, true}};
+    bool ddbActive_ = false;
+    unsigned ddbIndex_ = 0;
 };

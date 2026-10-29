@@ -130,6 +130,8 @@ public:
     }
 };
 
+void BlackFinCpu::SetSyntheticPanelDdb(const std::array<u8, 5>& reply) { oled->SetSyntheticDdb(reply); }
+
 BlackFinCpu::BlackFinCpu(bool deterministic) : time_(deterministic), pc(0) {
     cpuState_ = std::make_unique<bcore::CpuState>();
     memset(cpuState_.get(), 0, sizeof(bcore::CpuState));

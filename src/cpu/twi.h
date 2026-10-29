@@ -5,6 +5,7 @@
 #include <functional>
 #include <memory>
 #include <map>
+#include <vector>
 
 class I2CPeripheral {
 public:
@@ -63,6 +64,9 @@ public:
     void AttachPeripheral(const std::shared_ptr<I2CPeripheral>& client) {
         clients[client->Address()] = client;
     }
+    // Address, read direction, bytes, response and STOP; observation only.
+    using Observer = std::function<void(u8, bool, const std::vector<u8>&, bool, bool)>;
+    void SetObserver(Observer observer) { observer_ = std::move(observer); }
 
     void ProcessWithInterrupt(int ivg) override;
     // A master transfer may move data; otherwise ProcessWithInterrupt does nothing.
@@ -158,4 +162,5 @@ protected:
     std::queue<u8> rcvFifo;
 
     std::map<u32, std::shared_ptr<I2CPeripheral>> clients;
+    Observer observer_;
 };

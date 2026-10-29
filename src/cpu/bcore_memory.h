@@ -12,6 +12,9 @@ namespace profiling { struct MemoryCensus; }
 class EmulatorMemory : public bcore::Memory {
 public:
     explicit EmulatorMemory(Emulator& emulator);
+    // Observes completed guest accesses only; must not change guest state.
+    using Observer = std::function<void(uint32_t, unsigned, bool, uint32_t)>;
+    void SetObserver(Observer observer) { observer_ = std::move(observer); }
 
     uint32_t base() const override;
     uint32_t size() const override;
@@ -62,6 +65,7 @@ private:
     void Attend(bool hostWork) const;
 
     Emulator& emulator_;
+    Observer observer_;
     uint32_t* chainBudget_ = nullptr;
     uint64_t* unstableReads_ = nullptr;
 #ifdef ENABLE_PROFILING
