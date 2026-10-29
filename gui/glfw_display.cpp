@@ -1,4 +1,5 @@
 #include "glfw_display.h"
+#include "svg_theme.h"
 #ifdef __APPLE__
 #include <OpenGL/gl.h>
 #else
@@ -12,7 +13,8 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 
-GLFWDisplay::GLFWDisplay(const std::string &configPath, bool floating) : floating_(floating) {
+GLFWDisplay::GLFWDisplay(const std::string &configPath, bool floating, const std::string &theme)
+    : floating_(floating), theme_(theme) {
     if (!glfwInit())
         throw std::runtime_error("Failed to initialize GLFW");
     try {
@@ -106,7 +108,18 @@ void GLFWDisplay::LoadPanel(const std::string &path) {
     auto config = UILayout::Load(path);
     std::unique_ptr<SvgBackgroundRenderer> svg;
     if (config.svg) {
-        svg = std::make_unique<SvgBackgroundRenderer>(config.background);
+        if (!theme_.empty()) {
+            try {
+                if (config.themeBackground.empty())
+                    throw std::runtime_error("Layout has no theme_background artwork");
+                const auto theme = SvgTheme::Load(SvgTheme::Resolve(theme_));
+                svg = std::make_unique<SvgBackgroundRenderer>(config.themeBackground, theme.Stylesheet());
+            } catch (const std::exception &e) {
+                std::cerr << "SVG theme failed: " << e.what() << "; using original SVG colors\n";
+            }
+        }
+        if (!svg)
+            svg = std::make_unique<SvgBackgroundRenderer>(config.background);
         auto pixels = svg->Render(uint32_t(std::ceil(svg->Width())), uint32_t(std::ceil(svg->Height())));
         UploadBackground(pixels.rgba.data(), pixels.width, pixels.height);
         artWidth_ = svg->Width();
@@ -114,6 +127,8 @@ void GLFWDisplay::LoadPanel(const std::string &path) {
         cachedWidth_ = pixels.width;
         cachedHeight_ = pixels.height;
     } else {
+        if (!theme_.empty())
+            std::cerr << "SVG themes are unavailable for the PNG panel; using original PNG colors\n";
         int width, height, channels;
         std::unique_ptr<stbi_uc, decltype(&stbi_image_free)> data(
             stbi_load(config.background.c_str(), &width, &height, &channels, 4), stbi_image_free);

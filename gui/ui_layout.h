@@ -32,6 +32,7 @@ struct UIKey {
 enum class UIScreenFilter { Nearest, Linear };
 struct UILayout {
     std::string background;
+    std::string themeBackground;
     double scale = 1;
     bool svg = false;
     std::array<UIPoint, 4> screen; // TL, TR, BR, BL, in intrinsic viewport pixels

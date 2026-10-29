@@ -1,14 +1,16 @@
 #include "svg_background_renderer.h"
+#include "svg_theme.h"
 #include <iostream>
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include <stb_image_write.h>
 int main(int argc, char **argv) {
-    if (argc != 5) {
-        std::cerr << "Usage: op1-svg-render INPUT.svg WIDTH HEIGHT OUTPUT.png\n";
+    if (argc != 5 && argc != 6) {
+        std::cerr << "Usage: op1-svg-render INPUT.svg WIDTH HEIGHT OUTPUT.png [THEME|THEME.json]\n";
         return 1;
     }
     try {
-        SvgBackgroundRenderer renderer(argv[1]);
+        const auto css = argc == 6 ? SvgTheme::Load(SvgTheme::Resolve(argv[5])).Stylesheet() : "";
+        SvgBackgroundRenderer renderer(argv[1], css);
         auto p = renderer.Render(std::stoul(argv[2]), std::stoul(argv[3]));
         // PNG stores straight alpha; the runtime GL upload uses p unchanged.
         for (size_t i = 0; i < p.rgba.size(); i += 4)

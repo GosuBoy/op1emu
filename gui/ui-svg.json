@@ -1,5 +1,6 @@
 {
     "background": "op1.svg",
+    "theme_background": "op1-themeable.svg",
     "scale": 1.0,
     "display": {
         "filter": "linear",

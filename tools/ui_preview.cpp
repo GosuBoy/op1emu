@@ -1,4 +1,5 @@
 #include "glfw_display.h"
+#include "svg_theme.h"
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -79,13 +80,13 @@ class UIPreview {
         auto p = pixels.data() + (size_t(y) * w + x) * 4;
         return {p[0], p[1], p[2]};
     }
-    static int Run(int argc, char **argv) {
+    static int Run(int argc, char **argv, const std::string &theme) {
         bool test = argc == 2 && (std::string(argv[1]) == "--test" || std::string(argv[1]) == "--test-floating");
         bool floating = argc > 1 && (std::string(argv[1]) == "--floating" || std::string(argv[1]) == "--test-floating");
         const int first = floating && !test ? 2 : 1;
         std::string path = test ? (SvgBackgroundRenderer::Available() ? "gui/ui-svg.json" : "gui/ui.json")
                                 : (argc > first ? argv[first] : (floating ? "gui/ui-svg.json" : "gui/ui.json"));
-        GLFWDisplay d(path, floating);
+        GLFWDisplay d(path, floating, theme);
         Feed(d, 201, 400); // odd-width upload exercises UNPACK_ALIGNMENT=1
         glPixelStorei(GL_UNPACK_ALIGNMENT, 8);
         glPixelStorei(GL_UNPACK_ROW_LENGTH, 31);
@@ -273,6 +274,27 @@ class UIPreview {
             GLFWDisplay::FocusCallback(d.window_, GLFW_FALSE);
             Require(!d.hasCursorPosition_, "focus loss invalidates stale cursor position");
             d.SetKeyEventCallback({});
+            if (SvgBackgroundRenderer::Available()) {
+                const auto layout = UILayout::Load("gui/ui-svg.json");
+                for (const auto *theme : {"slate", "silver", "yellow", "green", "purple", "orange"}) {
+                    d.theme_ = theme;
+                    d.LoadPanel("gui/ui-svg.json");
+                    Require(d.uiConfig_.screen[0].x == layout.screen[0].x &&
+                                d.uiConfig_.screen[2].y == layout.screen[2].y &&
+                                d.uiConfig_.buttons.size() == layout.buttons.size(),
+                            "theme retains display and input layout");
+                    Feed(d, 201, 400);
+                    draw();
+                    Check(d);
+                }
+                // A bad palette recovers to the original SVG, with a diagnostic.
+                d.theme_ = "no-such-theme.json";
+                d.LoadPanel("gui/ui-svg.json");
+                Require(bool(d.svg_), "bad theme retains original SVG renderer");
+                draw();
+                Check(d);
+                std::cout << "Six themes retain the GL framebuffer and control layout; invalid palette recovers\n";
+            }
             std::cout
                 << "GL RGB565, filtering, orientation, projective overlay, state, resize and texture reuse passed\n";
         } else if (argc > first + 1) {
@@ -306,7 +328,22 @@ int main(int argc, char **argv) {
             glfwTerminate();
             return 0;
         }
-        return UIPreview::Run(argc, argv);
+        std::string theme;
+        std::vector<char *> args{argv[0]};
+        for (int i = 1; i < argc; ++i) {
+            const std::string arg = argv[i];
+            if (arg == "--theme") {
+                if (++i == argc || !*argv[i])
+                    throw std::runtime_error("--theme requires a name or JSON path");
+                theme = argv[i];
+            } else if (arg.rfind("--theme=", 0) == 0) {
+                theme = arg.substr(8);
+                if (theme.empty())
+                    throw std::runtime_error("--theme requires a name or JSON path");
+            } else
+                args.push_back(argv[i]);
+        }
+        return UIPreview::Run(static_cast<int>(args.size()), args.data(), theme);
     } catch (const std::exception &e) {
         std::cerr << e.what() << '\n';
         return 1;

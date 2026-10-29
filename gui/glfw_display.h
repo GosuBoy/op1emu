@@ -11,7 +11,8 @@
 
 class GLFWDisplay : public Display, public Keyboard {
   public:
-    explicit GLFWDisplay(const std::string &configPath = "gui/ui.json", bool floating = false);
+    explicit GLFWDisplay(const std::string &configPath = "gui/ui.json", bool floating = false,
+                         const std::string &theme = "");
     ~GLFWDisplay() override;
     void Initialize(int rows, int lines) override;
     void UpdateRowBuffer(int x, int y, const void *data, int length) override;
@@ -52,6 +53,7 @@ class GLFWDisplay : public Display, public Keyboard {
     UILayout uiConfig_;
     UIPanelInput input_{uiConfig_};
     std::unique_ptr<SvgBackgroundRenderer> svg_;
+    std::string theme_;
     double artWidth_ = 0, artHeight_ = 0;
     int cachedWidth_ = 0, cachedHeight_ = 0, pendingWidth_ = 0, pendingHeight_ = 0;
     std::chrono::steady_clock::time_point resizeChanged_{};

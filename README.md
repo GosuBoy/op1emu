@@ -267,6 +267,16 @@ runtime check when its VM cannot provide one; Linux CI runs the GL assertions
 under Xvfb. The macOS GL runtime was also verified on the local arm64 desktop.
 See the [visual comparison and verification record](docs/visual-comparisons/resvg-frontend/README.md).
 
+The palette experiment adds six optional SVG themes: `slate`, `silver`, `yellow`,
+`green`, `purple` and `orange`. Select one at launch, including in floating mode:
+
+```bash
+./build/op1emu nand.bin --ui=svg --floating-ui --theme=purple
+```
+
+`--theme PATH.json` loads custom colors. See [theme files and comparison generation](gui/themes/README.md).
+The current prototype uses launch selection; a graphical theme selector is still pending.
+
 Try the optional body-only SVG window:
 
 ```bash

@@ -78,6 +78,9 @@ UILayout UILayout::Load(const std::string &path) {
     l.background =
         (std::filesystem::path(path).parent_path() / j.at("background").get<std::string>()).string();
     l.svg = std::filesystem::path(l.background).extension() == ".svg";
+    if (j.contains("theme_background"))
+        l.themeBackground = (std::filesystem::path(path).parent_path() /
+                             j.at("theme_background").get<std::string>()).string();
     l.scale = Number(j.at("scale"));
     if (l.scale <= 0 || l.scale > 8)
         throw std::runtime_error("UI scale must be in (0,8]");

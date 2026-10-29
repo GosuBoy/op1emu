@@ -11,7 +11,7 @@ struct SvgPixels {
 };
 class SvgBackgroundRenderer {
   public:
-    explicit SvgBackgroundRenderer(const std::string &path);
+    explicit SvgBackgroundRenderer(const std::string &path, const std::string &stylesheet = "");
     ~SvgBackgroundRenderer();
     SvgBackgroundRenderer(const SvgBackgroundRenderer &) = delete;
     SvgBackgroundRenderer &operator=(const SvgBackgroundRenderer &) = delete;

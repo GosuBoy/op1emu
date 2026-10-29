@@ -35,7 +35,8 @@ size_t SvgBackgroundRenderer::BufferSize(uint32_t w, uint32_t h) {
         throw std::runtime_error("SVG raster size exceeds 8192px / 16 megapixel limit");
     return static_cast<size_t>(pixels * 4);
 }
-SvgBackgroundRenderer::SvgBackgroundRenderer(const std::string &path) : impl_(std::make_unique<Impl>()) {
+SvgBackgroundRenderer::SvgBackgroundRenderer(const std::string &path, const std::string &stylesheet)
+    : impl_(std::make_unique<Impl>()) {
 #ifdef OP1_HAVE_RESVG
     static std::once_flag logging;
     std::call_once(logging, resvg_init_log);
@@ -46,6 +47,8 @@ SvgBackgroundRenderer::SvgBackgroundRenderer(const std::string &path) : impl_(st
     const auto absolute = std::filesystem::absolute(path);
     const auto resources = absolute.parent_path().string();
     resvg_options_set_resources_dir(options.get(), resources.c_str());
+    if (!stylesheet.empty())
+        resvg_options_set_stylesheet(options.get(), stylesheet.c_str());
     resvg_options_load_system_fonts(options.get());
     const auto error = resvg_parse_tree_from_file(absolute.string().c_str(), options.get(), &impl_->tree);
     if (error != RESVG_OK || !impl_->tree)
@@ -56,6 +59,7 @@ SvgBackgroundRenderer::SvgBackgroundRenderer(const std::string &path) : impl_(st
         throw std::runtime_error("Invalid or oversized SVG intrinsic viewport: " + path);
 #else
     (void)path;
+    (void)stylesheet;
     throw std::runtime_error("SVG support was disabled at build time (OP1_ENABLE_SVG=OFF)");
 #endif
 }
