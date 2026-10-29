@@ -1,4 +1,5 @@
 #include "cpu.h"
+#include "peripheral/cs42l52.h"
 #include "observed_memory.h"
 #include "bcore_memory.h"
 #include "ebiu.h"
@@ -1267,6 +1268,18 @@ void BlackFinCpu::ConfigureSportTxTransport(u32 syntheticBitHz, u32 frameClocks)
         sport->EnableTxTransport();
         sport->TxTransport().SetExternalClock(syntheticBitHz, frameClocks, syntheticBitHz != 0, syntheticBitHz != 0);
     }
+}
+
+void BlackFinCpu::ConfigureCs42l52Test(u32 testMclkHz, bool holdReset) {
+    if (testCodec_) throw std::logic_error("CS42L52 test profile already installed");
+    ConfigureSportTxTransport(); // Initially no external serial clock.
+    testCodec_ = std::make_shared<CS42L52>(time_, testMclkHz);
+    testCodec_->HoldReset(holdReset);
+    testCodec_->Connect(0, {*portG, 12});
+    serviced_.twi->AttachPeripheral(testCodec_); // Opt-in replacement of the 0x4a dummy.
+    testCodec_->SetClockSink([this](u32 hz) {
+        sport0->TxTransport().SetExternalClock(hz, 64, hz != 0, hz != 0);
+    });
 }
 
 void BlackFinCpu::SetSportTxWordCallback(std::function<void(int, const SportTxTransport::Word&)> callback) {

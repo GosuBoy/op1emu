@@ -119,7 +119,7 @@ No hardware correction is introduced from this evidence. To distinguish the
 remaining explanations, obtain a trusted existing trace or a separately
 authorized observation binding the exact MAIN, boot path and silicon revision
 to: the 16-bit read before the set-bit operation, requested store value, 16-bit
-read after the store has completed, and value immediately before admission.
+read synchronized after the store has completed, and a 16-bit read immediately before admission.
 Capture any intervening writes and whether the initializer executed. No physical
 flashing is part of this session.
 
@@ -129,6 +129,8 @@ or ordering difference. Absence of the write would identify a different path.
 A later result label alone cannot distinguish them. A firmware change to either
 the shared hysteresis field or its admission guard requires separate evaluation.
 
-Codec reset/clock routing is still a later dependency. Empty serialized PCM does
+Physical codec reset/clock routing is still a later dependency. The independent
+[public codec component test](cs42l52-test.md) neither changes this reference nor
+supplies missing physical evidence. Empty serialized PCM does
 not establish codec mute, analog output state, absent physical clocks or agreement
 with the later silent-transmission failure reported on hardware.

@@ -83,7 +83,7 @@ The transport and two capture demonstrations are registered with CTest alongside
 the existing integration regressions. CI uploads firmware-free capture evidence on all
 three native build configurations.
 
-The next milestone adds a [guest-executed audio diagnostic](../tests/fixtures/sport_guest/README.md)
+The completed transport milestone adds a [guest-executed audio diagnostic](../tests/fixtures/sport_guest/README.md)
 with assembly source, linker script, pinned tool identity, image/source hashes
 and a reproducible LDR build. Guest instructions populate samples, configure
 SPORT0/DMA4 and SIC/CEC, execute IDLE, acknowledge DMA_DONE in an IVG9 ISR,
@@ -108,15 +108,18 @@ unchanged public capture identities and the private observation's limits.
 
 ## Next development milestones
 
-1. Resolve the reserved Port G hysteresis readback/initialization-order
-   prerequisite using the [complete register-history evidence](portg-hysteresis.md).
-   No dispatch/lane defect was found; physical readback/order remains unverified.
-   Then connect evidenced codec
-   state and board clock routing to the transport and compare clock/FS/DMA
-   observations with hardware, without forcing clocks through the CLI.
-   Resolve the remaining private build dependencies for an exact rebuild.
-2. Qualify DMA prefetch/SYNC completion, descriptor timing and codec controls
-   needed by that fixture; extend the bounded transport only where evidenced.
+1. Independently progress the [opt-in CS42L52 digital component experiment](cs42l52-test.md).
+   A public Blackfin guest now controls TWI, codec clock registers and SPORT/DMA;
+   declared synthetic MCLK/reset/wiring replace a directly forced SPORT clock.
+   Extend this bounded component model only with documented behavior and public
+   regressions. Component testing does not identify the physical OP-1 codec.
+2. Keep R4 hardware qualification blocked on the [completed hysteresis investigation](portg-hysteresis.md).
+   No dispatch/lane defect was found. Preserve raw `0x0008` storage, unchanged
+   guest admission, synthetic panel status, baseline and conditional traces.
+   Reopen only with image/boot/silicon-bound physical readback or execution-context
+   evidence. Physical codec/reset/MCLK/routing and the exact private rebuild
+   remain separate dependencies; then compare initialization and audio behavior.
+   Qualify additional DMA prefetch/SYNC and descriptor behavior where evidenced.
 3. Extend deterministic controls and native capture for gameplay, display,
    mixer and streaming regressions, keeping host playback separate.
 4. Develop portable guest inspection/debugging, then machine checkpoints and

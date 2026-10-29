@@ -226,6 +226,11 @@ if(OP1_BUILD_HEADLESS_TESTS)
     add_test(NAME op1-oled-bus-test COMMAND op1-oled-bus-test)
     add_executable(op1-sport-guest-test tests/sport_guest_test.cpp)
     target_link_libraries(op1-sport-guest-test PRIVATE emulator bfin-core nlohmann_json::nlohmann_json Threads::Threads)
+    add_executable(op1-codec-guest-test tests/codec_guest_test.cpp)
+    target_link_libraries(op1-codec-guest-test PRIVATE emulator bfin-core nlohmann_json::nlohmann_json Threads::Threads)
+    add_executable(op1-codec-test tests/codec_test.cpp)
+    target_link_libraries(op1-codec-test PRIVATE emulator)
+    add_test(NAME op1-codec-test COMMAND op1-codec-test)
     add_executable(op1-sport-transport-test tests/sport_transport_test.cpp)
     target_link_libraries(op1-sport-transport-test PRIVATE emulator)
     add_test(NAME op1-sport-transport-test COMMAND op1-sport-transport-test)
@@ -313,6 +318,10 @@ if(OP1_BUILD_HEADLESS_TESTS)
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sport_guest_integration.py
                     $<TARGET_FILE:op1-sport-guest-test> ${CMAKE_CURRENT_BINARY_DIR}/sport-guest $<TARGET_FILE:op1emu>)
         set_tests_properties(op1-sport-guest PROPERTIES TIMEOUT 180 RESOURCE_LOCK usbip-port)
+        add_test(NAME op1-codec-guest
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/codec_guest_integration.py
+                    $<TARGET_FILE:op1-codec-guest-test> ${CMAKE_CURRENT_BINARY_DIR}/codec-guest $<TARGET_FILE:op1emu>)
+        set_tests_properties(op1-codec-guest PROPERTIES TIMEOUT 180 RESOURCE_LOCK usbip-port)
         add_test(NAME op1-ldr-smoke
             COMMAND ${Python3_EXECUTABLE} tests/ldr_smoke.py $<TARGET_FILE:op1emu> $<TARGET_FILE:ldrdump>
             WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")

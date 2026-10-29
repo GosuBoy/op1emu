@@ -33,7 +33,9 @@ jobs:
           /tmp/binutils-2.44/configure --target=bfin-elf --disable-nls --disable-werror --disable-gprofng --disable-gold --with-system-zlib
           make -j2 MAKEINFO=true all-gas all-ld
       - name: Rebuild guest and verify image, sources and symbols
-        run: python3 tests/fixtures/sport_guest/build.py --as /tmp/binutils-build/gas/as-new --ld /tmp/binutils-build/ld/ld-new --check
+        run: |
+          python3 tests/fixtures/sport_guest/build.py --as /tmp/binutils-build/gas/as-new --ld /tmp/binutils-build/ld/ld-new --check
+          python3 tests/fixtures/codec_guest/build.py --as /tmp/binutils-build/gas/as-new --ld /tmp/binutils-build/ld/ld-new --check
 
   python:
     runs-on: ubuntu-22.04
@@ -195,6 +197,7 @@ jobs:
             build/sport-running.*
             build/sport-clockless.*
             build/sport-guest/
+            build/codec-guest/
 
       - name: OpenGL shell regression (Linux)
         if: runner.os == 'Linux'

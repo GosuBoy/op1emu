@@ -5,6 +5,7 @@
 #include "cpu/twi.h"
 #include "peripheral/MT29F4G08.h"
 #include "peripheral/sport_capture.h"
+#include "peripheral/cs42l52.h"
 #include "utils/log.h"
 #include "glfw_display.h"
 #include "headless.h"
@@ -114,6 +115,7 @@ static int RunEmulator(int argc, char* argv[]) {
     bool deterministic = false;
     bool sportTransport = false;
     u32 sportClockHz = 0, sportFrameClocks = 64;
+    std::optional<u32> codecTestMclk;
     std::string sportCapture;
     std::string diagnosticsPrefix;
     std::optional<std::array<u8, 5>> syntheticPanelDdb;
@@ -187,6 +189,15 @@ static int RunEmulator(int argc, char* argv[]) {
             if (!n || n > (arg == "--sport-tx-clock" ? 50'000'000u : 131'072u))
                 throw std::runtime_error(arg + " out of range");
             (arg == "--sport-tx-clock" ? sportClockHz : sportFrameClocks) = u32(n);
+        }
+        else if (options && arg == "--cs42l52-test-mclk") {
+            if (++i == argc) throw std::runtime_error(arg + " requires an integer Hz (0: absent)");
+            const std::string text = argv[i];
+            if (text.empty() || text.find_first_not_of("0123456789") != std::string::npos)
+                throw std::runtime_error(arg + " requires an integer Hz");
+            const auto hz = std::stoull(text);
+            if (hz > 50'000'000) throw std::runtime_error(arg + " out of range");
+            codecTestMclk = u32(hz);
         }
         else if (options && arg == "--sport-tx-capture") {
             if (++i == argc || !*argv[i]) throw std::runtime_error("--sport-tx-capture requires a file prefix");
@@ -339,6 +350,7 @@ static int RunEmulator(int argc, char* argv[]) {
                      "  --headless            No GLFW window or host audio device\n"
                      "  --sport-tx-mode MODE  legacy (default) or transport (clock/FIFO model)\n"
                      "  --sport-tx-clock HZ   Synthetic external TX bit clock; transport only\n"
+                     "  --cs42l52-test-mclk HZ  Opt-in codec test: PG12 RESET, AD0=0, clocks to SPORT0; 0: absent MCLK\n"
                      "  --sport-tx-frame-clocks N  External full-frame bit clocks (default 64)\n"
                      "  --sport-tx-capture PREFIX  Native PREFIX.sportN.pcm/.csv; transport only\n"
                      "  --input-script PATH   Read headless commands from PATH instead of stdin\n"
@@ -463,10 +475,24 @@ static int RunEmulator(int argc, char* argv[]) {
     }
     if (!sportTransport && (sportClockHz || !sportCapture.empty() || sportFrameClocks != 64))
         throw std::runtime_error("SPORT clock/capture options require --sport-tx-mode transport");
+    if (codecTestMclk && (!sportTransport || sportClockHz || sportFrameClocks != 64))
+        throw std::runtime_error("CS42L52 test requires transport, 64 frame clocks and no --sport-tx-clock");
     if (sportTransport) {
         cpu.ConfigureSportTxTransport(sportClockHz, sportFrameClocks);
         std::cerr << "SPORT TX transport: synthetic_external_bit_hz=" << sportClockHz
-                  << " frame_clocks=" << sportFrameClocks << "; codec/routing unmodeled; native capture only\n";
+                  << " frame_clocks=" << sportFrameClocks << "; native capture only\n";
+        if (codecTestMclk) {
+            cpu.ConfigureCs42l52Test(*codecTestMclk);
+            std::cerr << "CS42L52 B1 test component: synthetic MCLK=" << *codecTestMclk
+                      << " Hz, PG12->RESET, AD0=0, SCLK/LRCK->SPORT0; physical component/wiring unverified\n";
+            cpu.TestCodec()->SetObserver([](const CS42L52::Event& e) {
+                if (std::string(e.operation) == "write" || std::string(e.operation) == "reset")
+                    std::cerr << "codec-test ns=" << e.ns << " op=" << e.operation << " reg=" << e.reg
+                              << " value=" << e.after << " ack=" << e.ack << " bit_hz=" << e.state.bitHz
+                              << " clock=" << e.state.clockReason << " master_mute=" << unsigned(e.state.masterMute)
+                              << " output_mute=" << unsigned(e.state.outputMute) << '\n';
+            });
+        }
         if (!sportCapture.empty()) {
             auto a = std::make_shared<SportCapture>(sportCapture + ".sport0");
             auto b = std::make_shared<SportCapture>(sportCapture + ".sport1");

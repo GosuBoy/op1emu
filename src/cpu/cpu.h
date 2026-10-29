@@ -53,6 +53,7 @@ class Potentiometer;
 class GPIOPeripheral;
 class SPORT;
 class AudioOutput;
+class CS42L52;
 class Profiler;
 struct BcoreStats;
 namespace profiling { struct ServiceStats; struct MemoryCensus; }
@@ -178,6 +179,10 @@ public:
     void SetTwiSpeedup(unsigned speedup);
     // Before running. No external TX clock unless explicitly supplied.
     void ConfigureSportTxTransport(u32 syntheticBitHz = 0, u32 frameClocks = 64);
+    // Explicit component-test wiring: PG12 -> RESET, AD0=0, codec SCLK/LRCK
+    // -> SPORT0 external inputs. No physical board identity is implied.
+    void ConfigureCs42l52Test(u32 testMclkHz, bool holdReset = false);
+    std::shared_ptr<CS42L52> TestCodec() const { return testCodec_; }
     void SetSportTxWordCallback(std::function<void(int, const SportTxTransport::Word&)> callback);
     void SetSyntheticPanelDdb(const std::array<u8, 5>& reply);
 
@@ -242,6 +247,7 @@ protected:
     std::shared_ptr<USBDevice> usb;
     std::shared_ptr<SPORT> sport0;
     std::shared_ptr<SPORT> sport1;
+    std::shared_ptr<CS42L52> testCodec_;
     std::shared_ptr<ADXL345> adxl345;
     std::shared_ptr<Potentiometer> potentiometer;
     std::shared_ptr<GPIOPeripheral> gpioOrConnection;

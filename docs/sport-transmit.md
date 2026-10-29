@@ -44,12 +44,12 @@ Sources consulted:
   Applying these details to BF524 is a cross-family model assumption until
   checked against a complete BF524 reference/hardware trace.
 
-The I2C addresses currently attached in `cpu.cpp`, including `0x4a`, are dummy
-peripherals. An ACK or matching one-byte response does not establish a codec
-identity, reset state, PLL lock, or clock output. No chip-specific codec
-behavior, GPIO-to-codec wiring, or automatic clock generation from I2C has
-been added. Reports of unchanged DMA position/full TX are evidence of a
-stall to investigate, not proof that missing clocks caused it.
+Default runs retain the dummy at I2C address `0x4a`. An ACK alone does not
+establish a physical codec identity or clock output. An explicitly selected
+[CS42L52 component test](cs42l52-test.md) now replaces that dummy and connects
+codec-derived clocks through declared synthetic wiring. Its test identity,
+MCLK and reset wire are not evidence about the OP-1 board. Reports of unchanged
+DMA position/full TX remain evidence of a stall to investigate.
 
 ## Implemented contract
 
@@ -185,7 +185,10 @@ matching source revision and boot inputs have since been recovered and hashed
 outside the public repository. Exact pinned Linux compiler binaries and the
 complete updater patch/build workspace remain missing; R4 is a finite tone
 diagnostic, while the recovered V74 gameplay baseline has audio disabled.
-Hardware-intended startup remains **not executed**. The next milestone is to
-establish codec identity and the clock/pin route from board evidence, connect
-that state to the transport, then run unchanged initialization without forced
-CLI clocks and compare its first clock/FS/DMA observations with hardware.
+Unchanged R4 startup has since been executed under bounded observation: the
+baseline fails panel identification; the explicit synthetic panel profile
+reaches audio entry and refuses the Port G admission check before codec I2C or
+SPORT/DMA configuration. See [startup validation](startup-validation.md).
+Independent public codec development now proceeds without changing that
+reference. Physical codec identity, clock/reset routing and the unresolved
+readback/context observation remain hardware-qualification dependencies.
