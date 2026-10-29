@@ -65,3 +65,42 @@ differing initialization-order explanation described in
 [the startup contract](startup-diagnostics.md). No unsupported readback override,
 codec identity or board oscillator was introduced to make the guest pass.
 Codec/reset/clock routing remains an explicitly unresolved part of the milestone.
+
+## Port G history checkpoint
+
+Implementation: [`4db02251e0eaa164feb097cc08307db79d68041f`](https://github.com/GosuBoy/op1emu/commit/4db02251e0eaa164feb097cc08307db79d68041f).
+[CI run 40848779291](https://github.com/GosuBoy/op1emu/actions/runs/40848779291)
+passed all six jobs on 2026-10-29: Linux 31/31 CTests, Linux profiling 34/34,
+macOS 31/31, Python 15+183, libc++ and the pinned GNU guest rebuild. Both Linux
+GL shell checks passed; hosted macOS GL context was unavailable. Local native
+CTest passed 31/31, including the actual guest access-pattern regression.
+
+The dedicated register history and pre-run checkpoints are documented in
+[the hysteresis investigation](portg-hysteresis.md). They preserve raw storage
+behavior and report loader/guest/host origins, before/after values, boundaries,
+raw-mapping gaps and explicit truncation. Synthetic tests cover the normal
+16-bit read/bitset/low-half-store, byte/word/bulk lane mechanics, loader writes,
+checkpoints and forced history overflow. Extra API widths do not qualify physical
+MMR access widths.
+
+Public native artifacts `12886646047` (Linux profiling), `12886396140` (Linux)
+and `12886157509` (macOS) retain the existing capture identities. The public
+clocked guest PCM remains 64 bytes with the SHA256 above; clockless output is
+empty. All 43 non-CLI-log files match across these configurations and the prior
+checkpoint's artifacts. Private firmware, inputs, provenance and raw histories
+are absent from CI.
+
+Two final fixed-reference runs match all 19 relevant files, including the
+dedicated history and checkpoint RAM. A replay from the persisted private
+executable/inputs reproduces those identities. The shared event stream, native
+files and selected CPU/MMR/transport state match the preceding conditional
+reference. History has one guest write and no loader/other-host write, omission,
+raw mapping exposure or unexplained change.
+
+No dispatch/width/lane or reset correction is justified. Initialization writes
+eight; the admission snapshot and pre-comparison member contain eight, while
+the guard requires whole-register zero. Admission still refuses before codec
+I2C and SPORT/DMA. Hardware reserved-encoding readback and physical execution/
+initialization order remain unverified; the historical note's candidate hash
+association does not supply the missing transition capture. No hypothetical
+readback override or artificially passing guard is included.

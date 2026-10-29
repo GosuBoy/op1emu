@@ -5,6 +5,16 @@ not change hysteresis readback, guest instructions, admission checks or board
 clock inputs. The fixed private reference remains refused before codec I2C or
 SPORT/DMA initialization. `legacy` remains the default SPORT mode.
 
+Build with `OP1_BUILD_HEADLESS_TESTS=ON`, then run the public checks:
+
+```sh
+ctest --test-dir build -R 'op1-(memory-observation-test|startup-diagnostics)$' --output-on-failure
+```
+
+Private reproduction uses the saved input identities and launch arguments,
+plus the history/checkpoint options in [startup diagnostics](startup-diagnostics.md).
+Those inputs and raw traces stay outside this repository.
+
 ## Register contract
 
 `PORTG_HYSTERESIS` is a 16-bit system MMR at `0xFFC03244`, distinct from Port G
