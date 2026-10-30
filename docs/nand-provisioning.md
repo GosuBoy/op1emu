@@ -69,7 +69,14 @@ LZMA-alone payload, and extracts only safe regular files/directories under
 `content/`. Both modes run `mkyaffs2` with 2048-byte pages and 64-byte OOB.
 The converter relocates 28-byte YAFFS2 tags from OOB offset 2 to offset 4
 and writes a split data/OOB NAND image. An existing output is **never overwritten**.
-If conversion fails, the partially created output is removed.
+If conversion fails, the partially created output is removed. A failed exclusive
+open leaves a competing process's output untouched.
+
+Package extraction preserves each tar member's mode and modification time.
+Directory metadata is applied after its children; the staging root and implicit
+parent directories use mode 0755 and timestamp zero so extraction time and
+umask do not affect the image. Reproducibility comparisons require the same
+`mkyaffs2` version and options.
 
 The default YAFFS starting block is **132**. This was established by an
 empirical OP-1 firmware 246 boot test on an Apple Silicon Mac, not by a
@@ -97,19 +104,24 @@ archives in a pull request. These are user-provided inputs, never bundled.
 ## Tests and validation
 
 ```sh
-python3 -m unittest discover -s tools -p 'test_provision_nand.py' -v
+python3 -m pytest tools/tests -q
 ```
 
 The included unit tests use only synthetic page data and a synthetic
 CRC32/LZMA/TAR package. They cover the split-OOB layout, unsafe overwrite
-prevention, cleanup after invalid OOB, package extraction, and CRC rejection.
+prevention (including a competing output creator), cleanup after invalid OOB,
+package extraction, CRC rejection, and metadata repeatability across timestamps
+and umasks. If `mkyaffs2` is on PATH, an additional synthetic integration test
+compares SHA256s of repeated YAFFS2 and split-NAND images.
 
 ### Status / known gaps
 
 - The manual proof of concept populated 11,810 YAFFS2 pages from 116 factory
   objects, and firmware 246 subsequently reached the synth UI and produced audio.
-- The *new combined CLI* still needs end-to-end validation with a real, locally
-  owned `.op1` package and upstream review. This is intentionally a **draft**.
+- The maintainer reports an end-to-end Linux run with firmware 246 and stock
+  yaffs2utils (`1edc168`), producing 11,810 pages and reaching the main screen
+  behind a real device's boot area (blocks 0–131). The synth worked after a key
+  press. This is a maintainer report, not local verification of this revision.
 - `mkyaffs2` is an external dependency and requires a macOS portability fix
   for the tested version; removing that friction is a possible follow-up.
 - This does not create a self-booting encrypted firmware NAND and does not
