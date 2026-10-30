@@ -3,10 +3,11 @@
 // build in OP1_WASM_BUILD (../build-wasm by default).
 
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
 import { emulatorAssets } from "./tools/emulator-assets.js";
 
-const root = path.dirname(new URL(import.meta.url).pathname);
+const root = path.dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
   // Relative, so that the site works at any path (GitHub Pages: /op1emu/).
@@ -19,7 +20,7 @@ export default defineConfig({
   // brotli-dec-wasm finds its .wasm by new URL(..., import.meta.url), which
   // pre-bundling would break (vitejs/vite#8427).
   optimizeDeps: { exclude: ["brotli-dec-wasm"] },
-  // gui/ui.json and ui.png, the desktop frontend's.
+  // Shared PNG assets and the browser's SVG panel.
   server: { fs: { allow: [path.join(root, "..")] } },
   plugins: [
     emulatorAssets({

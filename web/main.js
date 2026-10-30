@@ -1,13 +1,11 @@
-// The page (web/README.md): the OP-1's faceplate from gui/ui.png with the
-// panel on it and gui/ui.json's keys, encoders and volume knob as the
-// desktop frontend has them (gui/glfw_display.cpp); the images the user
+// The page (web/README.md): SVG/PNG faceplates and calibrated controls;
+// the images the user
 // brings, kept in this browser's origin private file system (OPFS); and
 // the emulator in a Worker (worker.js), its audio in an AudioWorklet.
 
 import build from "virtual:op1emu";
 import { exceptions, tailCall } from "wasm-feature-detect";
-import ui from "../gui/ui.json";
-import faceplate from "../gui/ui.png";
+import { loadFaceplate } from "./faceplate.js";
 // A file of its own (Vite would inline one this small as a data: URL).
 import audioWorklet from "./audio-worklet.js?worker&url";
 import { KEYMAP } from "./keymap.js";
@@ -20,7 +18,8 @@ const ENCODER_STEPS = [0, 2, 3, 1];  // the quadrature sequence, as glfw_display
 
 const $ = (id) => document.getElementById(id);
 const worker = new Worker(new URL("./worker.js", import.meta.url), { type: "module" });
-let size = null;  // ui.png's
+let size = null;  // active faceplate's intrinsic coordinates
+let ui;
 let running = false;
 let volume = 128;
 const encoderIndex = {};
@@ -65,13 +64,20 @@ function place(element, [left, top, width, height]) {
   });
 }
 
-async function loadFaceplate() {
-  const image = $("faceplate");
-  image.src = faceplate;
-  await image.decode();
-  size = { width: image.naturalWidth, height: image.naturalHeight };
-  const { left, top, width, height } = ui.display;
-  place($("screen"), [left, top, width, height]);
+function applyLayout(layout, dimensions) {
+  releaseAll();
+  ui = layout;
+  size = dimensions;
+  // The SVG calibration is an axis-aligned TL/TR/BR/BL quad. The Worker
+  // already sends landscape frames, just as for the original PNG panel.
+  const display = ui.display;
+  const rectangle = display.quad
+    ? [display.quad[0][0], display.quad[0][1],
+       display.quad[2][0] - display.quad[0][0], display.quad[2][1] - display.quad[0][1]]
+    : [display.left, display.top, display.width, display.height];
+  place($("screen"), rectangle);
+  $("screen").style.imageRendering = display.filter === "linear" ? "auto" : "pixelated";
+  for (const mark of $("device").querySelectorAll(".pressed")) mark.remove();
   for (const [name, button] of Object.entries(ui.buttons)) {
     const mark = document.createElement("div");
     mark.className = "pressed";
@@ -128,6 +134,13 @@ function turnerAt(point) {
 
 const held = new Map();  // pointer id -> button name
 const keysDown = new Set();  // KeyboardEvent.code, pressed and not yet released
+function releaseAll() {
+  for (const code of keysDown) key(KEYMAP[code], false);
+  keysDown.clear();
+  for (const name of held.values()) key(name, false);
+  held.clear();
+}
+
 function bindInput() {
   const device = $("device");
   device.addEventListener("pointerdown", (event) => {
@@ -151,6 +164,7 @@ function bindInput() {
   };
   device.addEventListener("pointerup", release);
   device.addEventListener("pointercancel", release);
+  device.addEventListener("lostpointercapture", release);
   device.addEventListener("wheel", (event) => {
     const turner = running && turnerAt(imagePoint(event));
     if (!turner) return;
@@ -158,11 +172,11 @@ function bindInput() {
     turner.turn(event.deltaY < 0);
   }, { passive: false });
   // Whichever element has the focus (a button just clicked keeps it): the
-  // page has no text to type, and KEYMAP no key a button or checkbox takes.
+  // selectors and text inputs keep their own keyboard handling.
   // A key is released as it was pressed, whatever has the focus by then.
   addEventListener("keydown", (event) => {
     const name = KEYMAP[event.code];
-    if (!name || !running) return;
+    if (!name || !running || event.target.closest?.("select, input, textarea")) return;
     event.preventDefault();
     if (event.repeat || keysDown.has(event.code)) return;
     keysDown.add(event.code);
@@ -175,11 +189,9 @@ function bindInput() {
   });
   // Keys held when the window loses focus, on the keyboard or by a pointer,
   // would stay down: their releases may never come.
-  addEventListener("blur", () => {
-    for (const code of keysDown) key(KEYMAP[code], false);
-    keysDown.clear();
-    for (const name of held.values()) key(name, false);
-    held.clear();
+  addEventListener("blur", releaseAll);
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) releaseAll();
   });
 }
 
@@ -298,13 +310,13 @@ worker.onmessage = ({ data }) => {
 };
 
 (async () => {
+  await loadFaceplate(applyLayout);
   const problem = browserProblem();
   const missing = await unsupported();
   if (problem || missing.length) {
     setStatus(problem ?? `This browser lacks ${missing.join(", ")}. Use a current Chrome or Edge.`, true);
     return;
   }
-  await loadFaceplate();
   bindInput();
   bindFiles();
   worker.postMessage({ type: "files" });

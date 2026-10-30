@@ -238,6 +238,10 @@ jobs:
         working-directory: web
         run: node tools/input-browser.mjs dist node_modules/playwright-core
 
+      - name: SVG and PNG panels in Chrome
+        working-directory: web
+        run: node tools/panel-browser.mjs dist node_modules/playwright-core
+
       - name: Upload the site
         if: github.event_name == 'push'
         uses: actions/upload-pages-artifact@v3

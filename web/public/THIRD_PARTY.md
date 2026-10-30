@@ -42,6 +42,15 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
+## SVG front panel
+
+`web/panel/op1.svg` and its six palettes are the artwork and class-only theme
+derivative from [op1emu/op1emu PR #77](https://github.com/op1emu/op1emu/pull/77),
+at GosuBoy/op1emu revision `523eac7092c0958a2b02576d9165e7fd35e950be`.
+The SVG was supplied with redistribution authorization, as recorded there.
+The browser port preserves its geometry, gradients, filters and outlined labels.
+The existing PNG panel's op1kenobi notices above still apply to the PNG fallback.
+
 ## npm packages
 
 The page's npm dependencies are bundled by Vite, which lists the licenses of

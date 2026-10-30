@@ -19,11 +19,13 @@ desktop build has the BF526's boot ROM compiled in (`ext/bfin_sim`'s
 
 ## The page
 
-- `index.html`, `main.js`: the faceplate is `gui/ui.png`, with the panel's
-  canvas on `gui/ui.json`'s display rectangle. The keys, encoders and volume
-  knob are `ui.json`'s, as `gui/glfw_display.cpp` uses them (an encoder steps
-  its quadrature sequence a click or a scroll at a time). The computer
-  keyboard's musical keys are op1kenobi's layout (`keymap.js`).
+- `index.html`, `main.js`, `faceplate.js`: the default faceplate is a native
+  browser-rendered SVG (`panel/op1.svg`), with a separate canvas for the live
+  firmware display. The Panel selector also offers the original `gui/ui.png`
+  with `gui/ui.json`'s calibration. Keys, encoders and volume send the same
+  GPIOs in both layouts (an encoder steps its quadrature sequence a click or
+  a scroll at a time). The computer keyboard's musical keys are op1kenobi's
+  layout (`keymap.js`).
 - `worker.js`: the emulator's Worker. The user's NAND image and `otp.bin` are
   imported into the origin private file system (OPFS), and exported from it.
   The emulator opens them through sync access handles, mounted with
@@ -61,6 +63,46 @@ WebAssembly module's code at least 128 KiB of a 2 GiB executable pool, about
 16,000 modules a process (measured, whatever the module's size), and a boot
 makes about 20,000 of them, one per block. Safari is untried.
 
+## SVG panel and themes
+
+![Browser SVG panel in Silver with a synthetic four-color display](../docs/web-svg-panel-retina.png)
+
+The Theme selector offers Slate, Silver (the supplied artwork's colors), Yellow,
+Green, Purple and Orange. It uses a native HTML select, including its keyboard
+and touch behavior. SVG filters, gradients and outlines are rendered by the
+browser at the current display density; there is no resvg, Rust, native-window
+or new npm dependency. The display stays a separate 400 × 200 landscape canvas,
+with smooth scaling on the SVG and the original pixel scaling on the PNG.
+
+`?ui=png` starts with the original panel; `?theme=green` chooses an SVG preset.
+Selections last for this page session. If the SVG cannot be fetched or decoded,
+the page reports it and loads the PNG with its matching controls. Theme changes
+replace only the background image, retaining the Worker, framebuffer, audio and
+held notes. Switching between SVG and PNG releases held keys before changing
+coordinates. Both layouts resize with the page; theme controls sit outside the
+instrument's input area, and typing in their selectors sends no instrument keys.
+
+The artwork, six palettes and calibrated controls come from
+[PR #77 at `523eac7`](https://github.com/op1emu/op1emu/pull/77).
+`panel/op1.svg` is the exact class-only derivative from that revision
+(`gui/op1-themeable.svg`); all 217 filters are retained. Its source SVG was
+provided with redistribution authorization, as recorded in that PR. The layout
+uses the same 1204 × 434 viewport, 58 button GPIO mappings, encoder regions and
+231 × 115.5 screen rectangle. The four surface classes (`op1-body`, `op1-panel`,
+`op1-keycap`, `op1-encoder-ring`) take the palette's paint; labels, black keys,
+colored encoder caps and firmware pixels keep their own colors. The trusted,
+bundled SVG is fetched once, styled in an SVG document and decoded as an image;
+it is never inserted into the page DOM. Superseded Blob URLs are revoked.
+No firmware, NAND or OTP data is included.
+
+`tools/panel-browser.mjs` runs against the production bundle with a recording
+Worker, without firmware. It checks all 58 button mappings for each panel at
+desktop and phone widths, encoder clicks/wheels, volume, touch, release outside,
+screen placement and four-color frames, all six themes, held-key handling,
+rapid selections, PNG startup and failed-SVG fallback. CI also runs the existing
+real-Worker LDR self-test and input checks. Set `OP1_PANEL_CAPTURE` to an absolute
+PNG path for a Retina-density screenshot with a synthetic four-color screen.
+
 ## Building
 
 With bcore's WebAssembly tools (`ext/bcore/tools/wasm/setup.sh`: Emscripten
@@ -86,6 +128,7 @@ npm run build      # dist/, as GitHub Pages serves it (the brotli takes a minute
 npm run preview    # dist/ at http://localhost:4173/
 node tools/smoke-browser.mjs dist node_modules/playwright-core /usr/bin/google-chrome
 node tools/input-browser.mjs dist node_modules/playwright-core /usr/bin/google-chrome
+node tools/panel-browser.mjs dist node_modules/playwright-core /usr/bin/google-chrome
 ```
 
 ## Node
