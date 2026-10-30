@@ -75,7 +75,9 @@ open leaves a competing process's output untouched.
 Package extraction preserves each tar member's mode and modification time.
 Directory metadata is applied after its children; the staging root and implicit
 parent directories use mode 0755 and timestamp zero so extraction time and
-umask do not affect the image. Reproducibility comparisons require the same
+umask do not affect the image. Because host change time cannot be restored and
+directory scans can update access time, generated YAFFS2 object headers use the
+archived modification time for all three timestamps. Reproducibility comparisons require the same
 `mkyaffs2` version and options.
 
 The default YAFFS starting block is **132**. This was established by an

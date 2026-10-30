@@ -72,6 +72,33 @@ def unpack_op1(package: Path, root: Path) -> None:
         raise ValueError("Package has no regular files in content/")
 
 
+def normalize_yaffs_timestamps(interleaved: Path) -> None:
+    """Use archived mtime for atime/ctime in stock little-endian YAFFS2 headers.
+
+    ctime cannot be restored with utime, and mkyaffs2's directory scan can change
+    atime. Its OOB ECC covers tags only, so changing header data leaves it valid.
+    """
+    chunk_size = PAGE_SIZE + OOB_SIZE
+    with interleaved.open("r+b") as image:
+        while True:
+            offset = image.tell()
+            chunk = image.read(chunk_size)
+            if not chunk:
+                break
+            if len(chunk) != chunk_size:
+                raise ValueError("Invalid or incomplete YAFFS2 image size")
+            spare = chunk[PAGE_SIZE:]
+            sequence, _, chunk_id, _ = struct.unpack_from("<4I", spare, TAG_OFFSET_IN_IMAGE)
+            if sequence != FIRST_YAFFS_SEQUENCE:
+                raise ValueError("Unsupported YAFFS2 sequence")
+            if chunk_id == 0 and struct.unpack_from("<I", chunk)[0] != 4:
+                # yaffs_obj_hdr: atime, mtime, ctime are at bytes 280, 284, 288.
+                mtime = chunk[284:288]
+                image.seek(offset + 280)
+                image.write(mtime * 3)
+                image.seek(offset + chunk_size)
+
+
 def build_yaffs(root: Path, interleaved: Path, mkyaffs2: str) -> None:
     program = shutil.which(mkyaffs2)
     if program is None:
@@ -84,6 +111,8 @@ def build_yaffs(root: Path, interleaved: Path, mkyaffs2: str) -> None:
             + completed.stdout[-3000:] + completed.stderr[-3000:]
             + "\nNote: older yaffs2utils needs a dirname() portability fix on macOS."
         )
+
+    normalize_yaffs_timestamps(interleaved)
 
 
 def provision(interleaved: Path, output: Path, start_block: int = 132,

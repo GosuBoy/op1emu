@@ -11,12 +11,13 @@ from pathlib import Path
 import struct
 import tarfile
 import tempfile
+import time
 import unittest
 import zlib
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from provision_nand import PAGE_SIZE, OOB_SIZE, PAGES_PER_BLOCK, provision, unpack_op1, build_yaffs
+from provision_nand import PAGE_SIZE, OOB_SIZE, PAGES_PER_BLOCK, provision, unpack_op1, build_yaffs, normalize_yaffs_timestamps
 
 
 class ProvisionTests(unittest.TestCase):
@@ -140,6 +141,27 @@ class ProvisionTests(unittest.TestCase):
                     if directory.is_dir():
                         directory.chmod(0o755)
 
+    def test_normalizes_header_timestamps_only(self):
+        with tempfile.TemporaryDirectory() as work:
+            image = Path(work) / "image"
+            chunks = []
+            for object_type, chunk_id in ((1, 0), (3, 0), (4, 0), (1, 1)):
+                data = bytearray(b"X" * PAGE_SIZE)
+                struct.pack_into("<I", data, 0, object_type)
+                struct.pack_into("<3I", data, 280, 111, 222, 333)
+                spare = (b"\xff" * 2 + struct.pack("<4I", 0x1000, 257, chunk_id, 0xffff)
+                         + b"E" * 12 + b"\xff" * 34)
+                chunks.append(bytes(data) + spare)
+            image.write_bytes(b"".join(chunks))
+            normalize_yaffs_timestamps(image)
+            result = image.read_bytes()
+            for index, original in enumerate(chunks):
+                expected = bytearray(original)
+                if index < 2:
+                    struct.pack_into("<3I", expected, 280, 222, 222, 222)
+                start = index * (PAGE_SIZE + OOB_SIZE)
+                self.assertEqual(result[start:start + len(expected)], expected)
+
     @unittest.skipUnless(shutil.which("mkyaffs2"), "requires existing stock mkyaffs2")
     def test_yaffs_and_nand_repeatability(self):
         with tempfile.TemporaryDirectory() as work:
@@ -161,6 +183,8 @@ class ProvisionTests(unittest.TestCase):
             package.write_bytes(struct.pack("<I", zlib.crc32(compressed)) + compressed)
             hashes = []
             for index, mask in enumerate((0o022, 0o077)):
+                if index:
+                    time.sleep(1.1)  # YAFFS timestamps have one-second resolution.
                 destination = root / str(index)
                 old_mask = os.umask(mask)
                 try:
