@@ -7,6 +7,7 @@ Requires an external mkyaffs2 executable (yaffs2utils); does not decrypt LDRs.
 import argparse
 import io
 import lzma
+import os
 from pathlib import Path, PurePosixPath
 import shutil
 import struct
@@ -36,6 +37,7 @@ def unpack_op1(package: Path, root: Path) -> None:
         raise ValueError("Firmware package CRC32 mismatch")
     archive = lzma.decompress(compressed, format=lzma.FORMAT_ALONE)
     extracted = 0
+    directories = {root: (0o755, 0)}
     with tarfile.open(fileobj=io.BytesIO(archive), mode="r:") as tar:
         for member in tar:
             name = PurePosixPath(member.name)
@@ -44,15 +46,28 @@ def unpack_op1(package: Path, root: Path) -> None:
             if not name.parts or name.parts[0] != "content":
                 continue
             target = root.joinpath(*name.parts)
+            for parent in target.parents:
+                if parent == root:
+                    break
+                directories.setdefault(parent, (0o755, 0))
             if member.isdir():
                 target.mkdir(parents=True, exist_ok=True)
+                directories[target] = (member.mode, member.mtime)
             elif member.isfile():
                 target.parent.mkdir(parents=True, exist_ok=True)
                 with tar.extractfile(member) as source, target.open("wb") as dest:
                     shutil.copyfileobj(source, dest)
+                os.chmod(target, member.mode)
+                os.utime(target, (member.mtime, member.mtime))
                 extracted += 1
             else:
                 raise ValueError(f"Unsupported content entry: {member.name}")
+    # Apply directories last, children first: creating descendants changes mtimes
+    # and archive modes may remove the write permission needed for extraction.
+    for directory in sorted(directories, key=lambda path: len(path.parts), reverse=True):
+        mode, mtime = directories[directory]
+        os.chmod(directory, mode)
+        os.utime(directory, (mtime, mtime))
     if not extracted:
         raise ValueError("Package has no regular files in content/")
 
@@ -88,8 +103,9 @@ def provision(interleaved: Path, output: Path, start_block: int = 132,
     if output.exists():
         raise FileExistsError(f"Refusing to overwrite existing NAND: {output}")
     data_region_size = total_pages * PAGE_SIZE
+    target = output.open("xb")
     try:
-        with interleaved.open("rb") as source, output.open("xb") as target:
+        with target, interleaved.open("rb") as source:
             erased = b"\xff" * (1024 * 1024)
             bytes_left = total_pages * chunk_size
             while bytes_left:
