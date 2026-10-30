@@ -170,3 +170,6 @@ this execution environment. No permission change or test relaxation was made.
 The 15 provisioning/tool unittest cases pass. The local system Python lacks
 pytest; it was not installed. The existing CI Python job and all three native
 configurations remain enabled to provide their independent results.
+
+The [validation receipt](init-handoff-validation.md) records the final commits,
+independent CI results, executable/input identities and native capture hashes.
