@@ -128,12 +128,16 @@ public:
     // (Core::set_copy_patch, on by default), the rest it compiles with LLVM.
     // Before the first Run().
     void SetCopyPatch(bool enable);
+    // Those blocks rely on the loop registers they were made with, behind a
+    // check at their start (Core::set_copy_patch_hints, on by default).
+    // Before the first Run().
+    void SetCopyPatchHints(bool enable);
     // The JIT worker's CPU time so far (the profiler's per-mark count), or -1
     // where there is none or the platform cannot tell.
     int64_t JitWorkerCpuNs() const;
-    // Whether memory DMA moves its rows only when something could see them
-    // (DMA::SetSettling; on by default) or at each row's time. Before the
-    // first Run().
+    // Whether memory DMA moves its elements only when something could see
+    // them (DMA::SetSettling; on by default) or at each one's time. Before
+    // the first Run().
     void SetDmaSettling(bool on);
     // Steady iterations dry mode counted (CpuState::steady_iterations).
     uint64_t SteadyIterations() const;
@@ -173,6 +177,8 @@ public:
 #endif
     // See TWI::SetSpeedup.
     void SetTwiSpeedup(unsigned speedup);
+    // See DMA::SetMdmaSpeedup. Before the first Run().
+    void SetMdmaSpeedup(unsigned speedup);
 
     // True once the JIT could not translate or run a block. The CPU state is
     // then no longer advancing, so the host should stop instead of retrying.
@@ -188,6 +194,12 @@ public:
     void SetPotentiometerValue(u8 value);
 
     const TimeSource& Time() const { return time_; }
+#ifdef __EMSCRIPTEN__
+    // Real-time mode with no thread to sleep on (web/src/op1_web.cpp): the
+    // steady-clock time Pace() would have slept until, for the caller to
+    // wait for before the next Run(), or 0. Run() clears it.
+    uint64_t PacedUntilNs() const { return pacedUntilNs_; }
+#endif
 #ifdef ENABLE_PROFILING
     // Profiling hooks (see profiling/profiler.h). Not owned.
     void SetProfiler(Profiler* profiler);
@@ -204,8 +216,9 @@ public:
     profiling::ServiceStats& EnableServiceStats();
     // Count guest memory accesses by device (census runs); owned like the service counts.
     profiling::MemoryCensus& EnableMemoryCensus();
-    const bcore::CpuState& State() const { return *cpuState_; }
 #endif
+    // The guest's registers (the profiler's digests, web/src/gate.cpp's).
+    const bcore::CpuState& State() const { return *cpuState_; }
     // RTC calendar time at guest time zero.
     void SetRtcEpoch(std::chrono::system_clock::time_point epoch) { time_.SetEpoch(epoch); }
 
@@ -291,6 +304,9 @@ protected:
     // HostWork() paces the guest every kPaceCycles of guest time.
     static constexpr uint64_t kPaceCycles = TimeSource::kHz / 1000;
     uint64_t nextPaceCycles_ = 0;
+#ifdef __EMSCRIPTEN__
+    uint64_t pacedUntilNs_ = 0;  // PacedUntilNs()
+#endif
     uint8_t idleWake_ = 0;  // SIC::Wakeup(), for generated code (CpuState::idle_wake)
     bool chaining_ = false;
     // A block is running (Core::run): what a device access queues now was
@@ -299,11 +315,10 @@ protected:
     static constexpr uint32_t kMaxChainPackets = 1u << 24;
     // The GP timers tick every kCyclesPerTimerTick guest cycles (see Run()),
     // but for TMRCLK's: it is TIMER7's output (GPTimer::TmrclkSclks), in
-    // SCLK cycles of kCyclesPerSclk core cycles (the firmware's PLL_DIV = 5:
-    // CCLK the VCO's 400 MHz, SCLK a fifth of it).
+    // SCLK cycles of kCyclesPerSclk core cycles.
     static constexpr uint64_t kCyclesPerTimerTick = 10000;
     static constexpr uint64_t kMaxCatchupTicks = 64;
-    static constexpr uint64_t kCyclesPerSclk = 5;
+    static constexpr uint64_t kCyclesPerSclk = TimeSource::kCyclesPerSclk;
     // The guest cycles of a TMRCLK cycle now, 0 while nothing clocks it, and
     // its ticks counted up to a guest cycle.
     uint64_t TmrclkCycles() const;

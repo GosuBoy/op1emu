@@ -1,5 +1,6 @@
 #include "loader/ldr.h"
 #include "cpu/cpu.h"
+#include "cpu/dma.h"
 #include "cpu/twi.h"
 #include "peripheral/MT29F4G08.h"
 #include "utils/log.h"
@@ -101,6 +102,7 @@ static int RunEmulator(int argc, char* argv[]) {
     bool deterministic = false;
     std::optional<long long> rtcEpoch;
     unsigned twiSpeedup = TWI::kDefaultSpeedup;
+    unsigned mdmaSpeedup = DMA::kDefaultMdmaSpeedup;
     unsigned audioBufferMs = MiniaudioOutput::kDefaultBufferMs;
     bool help = false;
     bool options = true;
@@ -121,6 +123,7 @@ static int RunEmulator(int argc, char* argv[]) {
     bool lightTier1 = true;
     bool tierBackground = true;
     bool copyPatch = true;
+    bool copyPatchHints = true;
     long long tierPublishAfter = 0;
     long long jitCpu = -1;
     bool chainDry = false;
@@ -182,6 +185,7 @@ static int RunEmulator(int argc, char* argv[]) {
         }
         else if (options && arg == "--no-tier-background") tierBackground = false;
         else if (options && arg == "--no-copy-patch") copyPatch = false;
+        else if (options && arg == "--no-cp-hints") copyPatchHints = false;
         else if (options && arg == "--profile-chain-dry") chainDry = anyProfiling = true;
         else if (options && arg == "--profile-mark-digest") markDigest = anyProfiling = true;
         else if (options && arg == "--rtc-epoch") {
@@ -204,6 +208,15 @@ static int RunEmulator(int argc, char* argv[]) {
             if (used == 0 || argv[i][used] != '\0' || factor < 1 || factor > 100000)
                 throw std::runtime_error(std::string("Invalid --twi-speedup (1..100000): ") + argv[i]);
             twiSpeedup = static_cast<unsigned>(factor);
+        }
+        else if (options && arg == "--mdma-speedup") {
+            if (++i == argc) throw std::runtime_error("--mdma-speedup requires a factor");
+            size_t used = 0;
+            long long factor = -1;
+            try { factor = std::stoll(argv[i], &used); } catch (const std::exception&) {}
+            if (used == 0 || argv[i][used] != '\0' || factor < 1 || factor > 100000)
+                throw std::runtime_error(std::string("Invalid --mdma-speedup (1..100000): ") + argv[i]);
+            mdmaSpeedup = static_cast<unsigned>(factor);
         }
         else if (options && arg == "--audio-buffer") {
             if (++i == argc) throw std::runtime_error("--audio-buffer requires milliseconds");
@@ -255,8 +268,8 @@ static int RunEmulator(int argc, char* argv[]) {
                      "  --steady-skip MODE    on (default), dry or off: a loop whose iteration changed\n"
                      "                        nothing but its counters goes to its last iteration\n"
                      "                        (dry: only counts the iterations it would skip)\n"
-                     "  --no-dma-settle       Move each memory DMA row at its own time instead of\n"
-                     "                        when something could see it (same transfers, slower)\n"
+                     "  --no-dma-settle       Move each memory DMA element at its own time instead\n"
+                     "                        of when something could see it (same transfers, slower)\n"
                      "  --tier-threshold N    Compile a block with the whole pipeline once it\n"
                      "                        started N times, cheaply before (default 30000;\n"
                      "                        0: every block once, with the whole pipeline)\n"
@@ -269,6 +282,8 @@ static int RunEmulator(int argc, char* argv[]) {
                      "                        a thread of their own\n"
                      "  --no-copy-patch       Make the cheap compilations with LLVM, not from\n"
                      "                        stencils where the instructions allow\n"
+                     "  --no-cp-hints         Make those from stencils that rely on nothing the\n"
+                     "                        loop registers held when they were made\n"
                      "  --tier-publish-after N  With --deterministic, use such a block's second\n"
                      "                        compilation N packets after it was asked for\n"
                      "                        (default 8388608; the CPU thread waits for it)\n"
@@ -276,6 +291,8 @@ static int RunEmulator(int argc, char* argv[]) {
                      "  --no-loop-blocks      Keep a guest loop's registers in memory across it\n"
                      "                        (bcore loop blocks off; same results, slower)\n"
                      "  --twi-speedup N       Run the I2C bus N times faster than programmed\n"
+                     "                        (default 10; 1 is the hardware's rate)\n"
+                     "  --mdma-speedup N      Run memory DMA N times faster than the hardware\n"
                      "                        (default 10; 1 is the hardware's rate)\n"
                      "  --audio-buffer MS     Audio latency, from the emulator to the sound card's\n"
                      "                        output (default 26, 9..200; more: later sound,\n"
@@ -349,6 +366,7 @@ static int RunEmulator(int argc, char* argv[]) {
     // Create BlackFin CPU
     BlackFinCpu cpu(deterministic);
     cpu.SetTwiSpeedup(twiSpeedup);
+    cpu.SetMdmaSpeedup(mdmaSpeedup);
     // An LDR runs with the host looking at the PC after every block
     // (LdrExecutionThread).
     if (chainDry && noChain) throw std::runtime_error("--profile-chain-dry checks chaining: not with --no-chain");
@@ -360,6 +378,7 @@ static int RunEmulator(int argc, char* argv[]) {
     cpu.SetLightTier1(lightTier1);
     cpu.SetTierBackground(tierBackground, static_cast<uint64_t>(tierPublishAfter), static_cast<int>(jitCpu));
     cpu.SetCopyPatch(copyPatch);
+    cpu.SetCopyPatchHints(copyPatchHints);
     if (noDmaSettle) cpu.SetDmaSettling(false);
     if (rtcEpoch) cpu.SetRtcEpoch(std::chrono::system_clock::time_point(std::chrono::seconds(*rtcEpoch)));
 #ifdef ENABLE_PROFILING

@@ -193,14 +193,6 @@ BlackFinCpu::BlackFinCpu(bool deterministic) : time_(deterministic), pc(0) {
     dma->AttachDMABus(DMAPeripheralType::DMAPeripheralSPORT0Tx, sport0);
     dma->AttachDMABus(DMAPeripheralType::DMAPeripheralSPORT1Rx, sport1);
     dma->AttachDMABus(DMAPeripheralType::DMAPeripheralSPORT1Tx, sport1);
-    auto memorySrcBus0 = std::make_shared<MemorySrcDMABus>();
-    auto memoryDestBus0 = std::make_shared<MemoryDestDMABus>(*memorySrcBus0);
-    dma->AttachDMABus(DMAPeripheralType::DMAPeripheralMDMADest0, memoryDestBus0);
-    dma->AttachDMABus(DMAPeripheralType::DMAPeripheralMDMASrc0, memorySrcBus0);
-    auto memorySrcBus1 = std::make_shared<MemorySrcDMABus>();
-    auto memoryDestBus1 = std::make_shared<MemoryDestDMABus>(*memorySrcBus1);
-    dma->AttachDMABus(DMAPeripheralType::DMAPeripheralMDMADest1, memoryDestBus1);
-    dma->AttachDMABus(DMAPeripheralType::DMAPeripheralMDMASrc1, memorySrcBus1);
     dma->BindInterrupt(0, IRQ_DMA0, irqHandler);
     dma->BindInterrupt(1, IRQ_DMA1, irqHandler);
     dma->BindInterrupt(2, IRQ_DMA2, irqHandler);
@@ -424,6 +416,9 @@ HaltReason BlackFinCpu::Run() {
     // executed and the cycles IDLEs waited (see TimeSource).
     const uint64_t cyclesElapsed = time_.Cycles();
     SetBfinCycles(*cpuState_, cyclesElapsed);
+#ifdef __EMSCRIPTEN__
+    pacedUntilNs_ = 0;
+#endif
 
 #ifdef ENABLE_PROFILING
     const uint32_t blockPc = cpuState_->pc;
@@ -737,6 +732,14 @@ uint64_t BlackFinCpu::Pace(uint64_t targetNs) {
     pacer_.Sync(time_.Nanoseconds(), wall);
     uint64_t clockNs = pacer_.GuestNsAt(wall);
     if (targetNs <= clockNs + RealtimePacer::kAheadNs) return targetNs;
+#ifdef __EMSCRIPTEN__
+    // The browser's event loop is the only thread: instead of the sleep,
+    // guest time goes as far as the clock, and the caller comes back when
+    // the clock is at targetNs (PacedUntilNs), as after work another thread
+    // handed in. Keys arrive meanwhile.
+    pacedUntilNs_ = wall + (targetNs - clockNs);
+    return clockNs;
+#endif
     while (clockNs < targetNs) {
         if (OffThreadWork()) return clockNs;
         std::this_thread::sleep_for(std::chrono::nanoseconds(std::min(targetNs - clockNs, RealtimePacer::kSliceNs)));
@@ -768,6 +771,7 @@ void BlackFinCpu::SetTiering(uint32_t threshold, uint32_t sizeRef) { core_->set_
 void BlackFinCpu::SetLightTier1(bool light) { core_->set_light_tier1(light); }
 
 void BlackFinCpu::SetCopyPatch(bool enable) { core_->set_copy_patch(enable); }
+void BlackFinCpu::SetCopyPatchHints(bool enable) { core_->set_copy_patch_hints(enable); }
 
 void BlackFinCpu::SetTierBackground(bool background, uint64_t publishAfter, int jitCpu) {
     if (!publishAfter) publishAfter = kTierPublishAfter;
@@ -1233,6 +1237,8 @@ void BlackFinCpu::SetPotentiometerValue(u8 value) {
 void BlackFinCpu::SetTwiSpeedup(unsigned speedup) {
     serviced_.twi->SetSpeedup(speedup);
 }
+
+void BlackFinCpu::SetMdmaSpeedup(unsigned speedup) { serviced_.dma->SetMdmaSpeedup(speedup); }
 
 void BlackFinCpu::SetBootMode(int mode) {
     sic->SetBootMode(mode);
