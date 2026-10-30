@@ -6,7 +6,7 @@ import http from "node:http";
 import path from "node:path";
 
 const TYPES = { ".html": "text/html", ".js": "text/javascript", ".mjs": "text/javascript", ".css": "text/css",
-                ".json": "application/json", ".png": "image/png", ".wasm": "application/wasm" };
+                ".svg": "image/svg+xml", ".json": "application/json", ".png": "image/png", ".wasm": "application/wasm" };
 
 export async function serveDist(site) {
   const server = http.createServer((request, response) => {

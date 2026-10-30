@@ -11,6 +11,17 @@
 </head>
 <body>
 <main>
+  <div class="appearance" aria-label="Panel appearance">
+    <label>Panel <select id="panel-style">
+      <option value="svg">SVG</option><option value="png">Original PNG</option>
+    </select></label>
+    <label>Theme <select id="theme">
+      <option value="slate">Slate</option><option value="silver" selected>Silver</option>
+      <option value="yellow">Yellow</option><option value="green">Green</option>
+      <option value="purple">Purple</option><option value="orange">Orange</option>
+    </select></label>
+    <span id="panel-status" role="status"></span>
+  </div>
   <div id="device">
     <img id="faceplate" alt="OP-1" draggable="false">
     <canvas id="screen" width="400" height="200"></canvas>
