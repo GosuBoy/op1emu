@@ -176,6 +176,9 @@ if(ENABLE_PROFILING)
     target_compile_definitions(emulator PUBLIC ENABLE_PROFILING)
 endif()
 
+add_executable(op1-init-handoff tools/init_handoff_main.cpp)
+target_link_libraries(op1-init-handoff PRIVATE emulator bfin-core nlohmann_json::nlohmann_json)
+
 add_executable(op1-debug tools/debugger_main.cpp)
 target_link_libraries(op1-debug PRIVATE emulator nlohmann_json::nlohmann_json)
 
@@ -221,6 +224,10 @@ target_include_directories(op1emu PRIVATE ${stb_SOURCE_DIR} ${miniaudio_SOURCE_D
 option(OP1_BUILD_HEADLESS_TESTS "Build headless frontend regressions" OFF)
 if(OP1_BUILD_HEADLESS_TESTS)
     enable_testing()
+    add_executable(op1-bounded-execution-test tests/bounded_execution_test.cpp)
+    target_link_libraries(op1-bounded-execution-test PRIVATE emulator bfin-core nlohmann_json::nlohmann_json)
+    add_test(NAME op1-bounded-execution-test COMMAND op1-bounded-execution-test)
+    set_tests_properties(op1-bounded-execution-test PROPERTIES TIMEOUT 120)
     add_executable(op1-memory-observation-test tests/memory_observation_test.cpp)
     target_link_libraries(op1-memory-observation-test PRIVATE emulator nlohmann_json::nlohmann_json)
     add_test(NAME op1-memory-observation-test COMMAND op1-memory-observation-test)
@@ -322,6 +329,10 @@ if(OP1_BUILD_HEADLESS_TESTS)
 
     find_package(Python3 COMPONENTS Interpreter)
     if(Python3_Interpreter_FOUND)
+        add_test(NAME op1-init-handoff
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/init_handoff_integration.py
+                $<TARGET_FILE:op1-init-handoff> ${CMAKE_CURRENT_BINARY_DIR}/init-handoff)
+        set_tests_properties(op1-init-handoff PROPERTIES TIMEOUT 180)
         add_test(NAME op1-startup-diagnostics
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/startup_diagnostics.py $<TARGET_FILE:op1emu>)
         set_tests_properties(op1-startup-diagnostics PROPERTIES TIMEOUT 120 RESOURCE_LOCK usbip-port)

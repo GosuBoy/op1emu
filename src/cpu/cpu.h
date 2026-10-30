@@ -67,13 +67,20 @@ class BlackFinCpu : public CpuInterface {
 public:
     // deterministic: as fast as the host allows, not paced to its clock; see
     // TimeSource.
-    explicit BlackFinCpu(bool deterministic = false);
+    explicit BlackFinCpu(bool deterministic = false, bool packetBounded = false);
     ~BlackFinCpu() override;
 
     void HaltExecution(HaltReason reason) override;
     void SaveContext() override;
     void RestoreContext() override;
     HaltReason Run() override;
+
+    // Opt-in diagnostic mode: one issue packet per Run, including branches.
+    // The absolute cycle ceiling also clamps IDLE, before advancing time.
+    // Constructor/default execution and dependency pins are unchanged.
+    void SetCycleCeiling(uint64_t ceiling);
+    // Passive observation on the CPU owner, between Run calls only.
+    const bcore::CpuState& DiagnosticState() const { return *cpuState_; }
 
     void SetRegister(int index, u32 value) override;
     u32 GetRegister(int index) override;
@@ -288,6 +295,8 @@ protected:
     std::atomic<bool> inboxPending_{false};
     // Set by the first Run(); until then every caller counts as another thread.
     std::atomic<std::thread::id> cpuThread_{};
+    bool packetBounded_ = false;
+    uint64_t cycleCeiling_ = UINT64_MAX;
     void ScheduleEvent(std::function<void()> event, uint64_t dueNs);
     void StopChaining();
     // Packets the run starting at pc may retire before the host has work.

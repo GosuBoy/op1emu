@@ -151,3 +151,12 @@ upstream revision, preserve any integration work, and rerun the branch's CI.
 Record the exact revision used for firmware captures. A passing synthetic CI
 run and a successful emulator firmware run establish different things; keep
 their results separate when reporting hardware readiness.
+
+## Synthetic ROM INIT handoff
+
+The owned [INIT fixture and validation](init-handoff.md) execute the embedded
+ROM memory-boot INIT/callback protocol and compare it with direct MAIN loading.
+A separate supervised diagnostic worker enforces packet, IDLE, Run-call, wall
+and trace-source limits. Defaults and existing private references are unchanged.
+The result qualifies a synthetic protocol; NAND boot and the owner's physical
+TE-BOOT/board handoff remain unqualified.

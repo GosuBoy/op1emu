@@ -29,7 +29,9 @@ static bool Interesting(uint32_t a) {
            (a >= 0xffe02000 && a < 0xffe02200) || (a >= 0xffe03000 && a < 0xffe03010);
 }
 
-StartupTrace::StartupTrace(BlackFinCpu& cpu, std::string prefix) : cpu_(cpu), prefix_(std::move(prefix)) {
+StartupTrace::StartupTrace(BlackFinCpu& cpu, std::string prefix, uint64_t sourceLimit)
+    : cpu_(cpu), prefix_(std::move(prefix)), sourceLimit_(sourceLimit) {
+    if (sourceLimit > 4096) throw std::invalid_argument("trace source cap exceeds 4096");
     events_.open(prefix_ + ".events.jsonl");
     if (!events_) throw std::runtime_error("cannot open startup events");
     hysteresis_.open(prefix_ + ".portg-hysteresis.jsonl");
@@ -49,7 +51,7 @@ StartupTrace::StartupTrace(BlackFinCpu& cpu, std::string prefix) : cpu_(cpu), pr
     });
     lastWord_ = portMux_->ObservedWord();
     hysteresis_ << Json{{"kind", "contract"}, {"schema", 1}, {"address", 0xffc03244u},
-                       {"storage_bytes", 4}, {"hardware_register_bits", 16}, {"max_records", 10000},
+                       {"storage_bytes", 4}, {"hardware_register_bits", 16}, {"max_records", sourceLimit_ ? sourceLimit_ : 10000},
                        {"pc_precision", "basic-block entry; resolve actual instruction from disassembly"},
                        {"origin", "dispatch scope; nested callbacks inherit scope"},
                        {"model", "unmodified generic byte storage; not reserved-encoding hardware semantics"}}.dump() << '\n';
@@ -57,12 +59,15 @@ StartupTrace::StartupTrace(BlackFinCpu& cpu, std::string prefix) : cpu_(cpu), pr
     Checkpoint("observer_attached");
     cpu_.bcoreMemory_->SetObserver([this](uint32_t a, unsigned width, bool write, uint32_t value) {
         if (!Interesting(a)) return;
-        ++accesses_[{a, width, write}];
+        const auto access = std::make_tuple(a, width, write);
+        if (!sourceLimit_ || accesses_.size() < sourceLimit_ || accesses_.count(access))
+            ++accesses_[access];
+        else ++accessCountersDropped_;
         if (!write) {
             auto key = std::make_pair(a, width);
             const auto previous = reads_.find(key);
             if (previous != reads_.end() && previous->second == value) { ++omitted_; return; }
-            reads_[key] = value;
+            if (!sourceLimit_ || reads_.size() < sourceLimit_ || reads_.count(key)) reads_[key] = value;
         } else reads_.erase({a, width});
         // Separate budgets keep display traffic from hiding later codec/SPORT
         // events. Access totals continue after detailed observations are capped.
@@ -89,7 +94,7 @@ StartupTrace::StartupTrace(BlackFinCpu& cpu, std::string prefix) : cpu_(cpu), pr
                   {"block_pc", cpu_.PC()}, {"command", command}, {"register_mapped", supported},
                   {"synthetic_profile", cpu_.oled->SyntheticDdb().has_value()}, {"bus_value", value}}.dump());
     });
-    Emit(Json{{"kind", "contract"}, {"version", 1}, {"max_events", 200000},
+    Emit(Json{{"kind", "contract"}, {"version", 1}, {"max_events", 200000}, {"source_cap", sourceLimit_},
               {"pc_precision", "basic-block entry; not the exact instruction"},
               {"mmio_reads", "first/change only; host snapshot reads are excluded"},
               {"i2c_time", "service observation, not electrical edge time"},
@@ -108,8 +113,9 @@ StartupTrace::~StartupTrace() {
 
 void StartupTrace::History(const std::string& json) {
     ++historyTotal_;
-    if (historyWritten_ == 10000) {
-        if (!historyOmitted_) hysteresis_ << "{\"kind\":\"truncated\",\"max_records\":10000}\n";
+    const auto cap = sourceLimit_ ? sourceLimit_ : 10000;
+    if (historyWritten_ == cap) {
+        if (!historyOmitted_) hysteresis_ << Json{{"kind", "truncated"}, {"max_records", cap}}.dump() << '\n';
         ++historyOmitted_;
         return;
     }
@@ -151,6 +157,7 @@ void StartupTrace::Emit(const std::string& json) {
 }
 
 bool StartupTrace::Reserve(const char* category, uint64_t limit) {
+    if (sourceLimit_) limit = std::min(limit, sourceLimit_);
     auto& count = categoryEvents_[category];
     if (count >= limit) { ++categoryOmissions_[category]; ++omitted_; return false; }
     ++count;
@@ -161,10 +168,11 @@ void StartupTrace::BeforeRun() {
     const auto pc = cpu_.PC();
     if (!checkpoints_.empty() && checkpoints_.erase(pc)) Checkpoint("requested_pc", true);
     // Limit unique-PC storage as well as the output file.
-    if (pcs_.size() < 100000 || pcs_.count(pc)) {
-        if (++pcs_[pc] == 1)
+    const auto pcCap = sourceLimit_ ? sourceLimit_ : 100000;
+    if (pcs_.size() < pcCap || pcs_.count(pc)) {
+        if (++pcs_[pc] == 1 && Reserve("pc_first", pcCap))
             Emit(Json{{"kind", "pc_first"}, {"ns", cpu_.Time().Nanoseconds()}, {"pc", pc}}.dump());
-    } else ++omitted_;
+    } else { ++omitted_; ++categoryOmissions_["pc_first"]; }
     if (cpu_.Time().Cycles() >= nextProgress_ && Reserve("progress", 10000)) {
         Emit(Json{{"kind", "progress"}, {"cycles", cpu_.Time().Cycles()}, {"packets", cpu_.Time().Packets()},
                   {"pc", pc}, {"ipend", cpu_.emulator.MemoryRead32(0xffe02108)},
@@ -238,6 +246,7 @@ void StartupTrace::Finish(const std::string& reason) {
                    {"dpregs", c.dpregs}, {"mmr", registers}, {"sport", ports}, {"pc_run_histogram", histogram}, {"access_counts", accesses},
                    {"events_written", eventsWritten_}, {"events_omitted_or_coalesced", omitted_},
                    {"category_events", categoryEvents_}, {"category_omissions", categoryOmissions_},
+                   {"access_counter_omissions", accessCountersDropped_},
                    {"portg_hysteresis_history", history}, {"memory", Json::array()}};
     for (auto [address, bytes] : memory_) {
         std::ostringstream suffix;

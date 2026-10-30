@@ -15,7 +15,9 @@ class ObservedMemoryDevice;
 // Contains guest data; callers choose a private destination for private images.
 class StartupTrace {
 public:
-    StartupTrace(BlackFinCpu& cpu, std::string prefix);
+    // 0 preserves existing budgets; a nonzero cap limits every event source,
+    // including the dedicated history. Contract/summary metadata is separate.
+    StartupTrace(BlackFinCpu& cpu, std::string prefix, uint64_t sourceLimit = 0);
     ~StartupTrace();
     void BeforeRun();
     void Finish(const std::string& reason);
@@ -28,6 +30,7 @@ private:
     void History(const std::string& json);
     BlackFinCpu& cpu_;
     std::string prefix_;
+    uint64_t sourceLimit_ = 0;
     std::ofstream events_;
     std::ofstream hysteresis_;
     ObservedMemoryDevice* portMux_ = nullptr;
@@ -36,6 +39,7 @@ private:
     uint32_t lastWord_ = 0;
     std::set<uint32_t> checkpoints_;
     uint64_t eventsWritten_ = 0, omitted_ = 0, nextProgress_ = 0;
+    uint64_t accessCountersDropped_ = 0;
     std::map<uint32_t, uint64_t> pcs_;
     std::map<std::string, uint64_t> categoryEvents_, categoryOmissions_;
     std::map<std::pair<uint32_t, unsigned>, uint32_t> reads_;

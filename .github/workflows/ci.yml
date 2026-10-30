@@ -38,6 +38,7 @@ jobs:
           python3 tests/fixtures/codec_guest/build.py --as /tmp/binutils-build/gas/as-new --ld /tmp/binutils-build/ld/ld-new --check
           python3 tests/fixtures/stream_guest/build.py --as /tmp/binutils-build/gas/as-new --ld /tmp/binutils-build/ld/ld-new --check
           python3 tests/fixtures/diagnose_guest/build.py --as /tmp/binutils-build/gas/as-new --ld /tmp/binutils-build/ld/ld-new --output /tmp/diagnose-guest-rebuild --check
+          python3 tests/fixtures/init_handoff/build.py --as /tmp/binutils-build/gas/as-new --ld /tmp/binutils-build/ld/ld-new --output /tmp/init-handoff-rebuild --check
 
   python:
     runs-on: ubuntu-22.04
@@ -204,6 +205,8 @@ jobs:
             build/stream-guest-44100/
             build/debugger-captures/
             build/readiness-captures/
+            build/init-handoff/*.json
+            build/init-handoff/*.jsonl
 
       - name: OpenGL shell regression (Linux)
         if: runner.os == 'Linux'

@@ -135,9 +135,15 @@ public:
 
 void BlackFinCpu::SetSyntheticPanelDdb(const std::array<u8, 5>& reply) { oled->SetSyntheticDdb(reply); }
 
-BlackFinCpu::BlackFinCpu(bool deterministic) : time_(deterministic), pc(0) {
+BlackFinCpu::BlackFinCpu(bool deterministic, bool packetBounded) : time_(deterministic), pc(0) {
+    if (packetBounded && !deterministic)
+        throw std::invalid_argument("packet-bounded execution requires deterministic time");
+    packetBounded_ = packetBounded;
     cpuState_ = std::make_unique<bcore::CpuState>();
     memset(cpuState_.get(), 0, sizeof(bcore::CpuState));
+    // Limited mode must be selected before Core::init: changing this field
+    // after compiling an unlimited block would not add packet guards.
+    if (packetBounded_) cpuState_->steps_remaining = 1;
 
     auto irqHandler = [this](int q, int level) { this->ProcessInterrupt(q, level); };
     devices.emplace_back(std::make_shared<MemoryDevice>("L1 SRAM", 0xFFB00000, 0x1000));
@@ -356,7 +362,7 @@ BlackFinCpu::BlackFinCpu(bool deterministic) : time_(deterministic), pc(0) {
     core_->set_verify(false);
     // Most blocks of a boot run too rarely for the whole pipeline to pay:
     // tier 0 compiles each about four times faster.
-    core_->set_tiering(kTierThreshold);
+    core_->set_tiering(packetBounded_ ? 0 : kTierThreshold);
     // And where a block's instructions have stencils, tier 0 copies it
     // together from them: on the boot to the main display 13,500 of 21,300
     // tier-0 blocks, 4 us each where LLVM took about 1 ms, the CPU thread's
@@ -440,7 +446,17 @@ void BlackFinCpu::InvalidateTranslations() {
 #endif
 }
 
+void BlackFinCpu::SetCycleCeiling(uint64_t ceiling) {
+    if (!packetBounded_ || cpuThread_.load() != std::thread::id{})
+        throw std::logic_error("cycle ceiling requires packet-bounded mode before execution");
+    if (ceiling > 1'000'000'000)
+        throw std::invalid_argument("diagnostic cycle ceiling exceeds one billion");
+    cycleCeiling_ = ceiling;
+}
+
 HaltReason BlackFinCpu::Run() {
+    if (time_.Cycles() >= cycleCeiling_) return HaltReason::Break;
+    if (packetBounded_) cpuState_->steps_remaining = 1;
     if (debugger_ && debugger_->Boundary("run-entry")) return HaltReason::Break;
     if (debugIdlePending_) {
         debugIdlePending_ = false;
@@ -742,6 +758,7 @@ void BlackFinCpu::Wait() {
     if (HostHasWork(ivg) || *cpuState_->cec_pending || sic->Wakeup()) return;
     const uint64_t now = time_.Cycles();
     uint64_t due = std::min(DueCycles(ivg), now + kMaxChainPackets);
+    due = std::min(due, cycleCeiling_);
     if (due <= now) return;
     // Real-time mode: no further than the host's clock allows, and on work
     // another thread hands in meanwhile no further than the clock is: the

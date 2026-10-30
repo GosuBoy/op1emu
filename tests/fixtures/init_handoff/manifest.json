@@ -1,0 +1,233 @@
+{
+  "images": {
+    "bad-context": {
+      "image_bytes": 778,
+      "image_sha256": "386a5f8a2bd7ea0a21abd586ecc41c25cf1328a6609211c3d273b0a1231e881c",
+      "main_sha256": "f5715114ac2d4276b9d12104000e5eeba0424768eed941b0e5c94e9f237922fd",
+      "poison_offset": 544,
+      "stream_bytes": 648,
+      "stream_sha256": "449365289f0c2582edd4dde15939dfcff0c2d3a249a8598a34b8b0c317baa7ce",
+      "symbols": {
+        "_start": 4288676096,
+        "boot_call": 4288676150,
+        "boot_returned": 4288676152,
+        "callback_entry": 4288680188,
+        "callback_return": 4288680360,
+        "callback_valid": 4288680334,
+        "exception_stop": 4288676172,
+        "init_entry": 4288679936,
+        "init_return": 4288680168,
+        "init_valid": 4288680012,
+        "main_done": 1048624,
+        "main_entry": 1048576,
+        "main_word": 1048628,
+        "poison_entry": 4288680394
+      }
+    },
+    "bad-init": {
+      "image_bytes": 710,
+      "image_sha256": "2de0d628881d696ab30bb7201ac277ef1be51855c0b93f478b3781419a6059dc",
+      "main_sha256": "f5715114ac2d4276b9d12104000e5eeba0424768eed941b0e5c94e9f237922fd",
+      "poison_offset": 476,
+      "stream_bytes": 580,
+      "stream_sha256": "835da9cd1f11cae49670c0ee35ce5e37ce01c6d9b450e1be273522cf96ce9d6d",
+      "symbols": {
+        "_start": 4288676096,
+        "boot_call": 4288676150,
+        "boot_returned": 4288676152,
+        "callback_entry": 4288680122,
+        "callback_return": 4288680294,
+        "callback_valid": 4288680268,
+        "exception_stop": 4288676172,
+        "init_entry": 4288679936,
+        "init_return": 4288680102,
+        "init_valid": 4288680012,
+        "main_done": 1048624,
+        "main_entry": 1048576,
+        "main_word": 1048628,
+        "poison_entry": 4288680328
+      }
+    },
+    "direct": {
+      "image_bytes": 72,
+      "image_sha256": "495fb175f5db602928d19afe886fdec6390be0000e05a8ec2a3dc5a80826913b",
+      "main_sha256": "f5715114ac2d4276b9d12104000e5eeba0424768eed941b0e5c94e9f237922fd",
+      "poison_offset": 540,
+      "stream_bytes": 644,
+      "stream_sha256": "a43ac1cdc0710fff952a5d7d0c4cd9ed21b052396e7703dc289434f356f1a1ce",
+      "symbols": {
+        "_start": 4288676096,
+        "boot_call": 4288676150,
+        "boot_returned": 4288676152,
+        "callback_entry": 4288680186,
+        "callback_return": 4288680358,
+        "callback_valid": 4288680332,
+        "exception_stop": 4288676172,
+        "init_entry": 4288679936,
+        "init_return": 4288680166,
+        "init_valid": 4288680012,
+        "main_done": 1048624,
+        "main_entry": 1048576,
+        "main_word": 1048628,
+        "poison_entry": 4288680392
+      }
+    },
+    "malformed-data": {
+      "image_bytes": 1260,
+      "image_sha256": "2eb10ee06ad3065e86887a9468cac39491b2ec6d43dfe2578f426b2678a136a8",
+      "main_sha256": "f5715114ac2d4276b9d12104000e5eeba0424768eed941b0e5c94e9f237922fd",
+      "poison_offset": 540,
+      "stream_bytes": 644,
+      "stream_sha256": "a43ac1cdc0710fff952a5d7d0c4cd9ed21b052396e7703dc289434f356f1a1ce",
+      "symbols": {
+        "_start": 4288676096,
+        "boot_call": 4288676144,
+        "boot_returned": 4288676146,
+        "callback_entry": 4288680186,
+        "callback_return": 4288680358,
+        "callback_valid": 4288680332,
+        "exception_stop": 4288676166,
+        "init_entry": 4288679936,
+        "init_return": 4288680166,
+        "init_valid": 4288680012,
+        "main_done": 1048624,
+        "main_entry": 1048576,
+        "main_word": 1048628,
+        "poison_entry": 4288680392
+      }
+    },
+    "misaligned-data": {
+      "image_bytes": 1260,
+      "image_sha256": "fc287575f006d130b611b3edb0de3a9d1e25d6144cb58324d2904246e2e2f898",
+      "main_sha256": "f5715114ac2d4276b9d12104000e5eeba0424768eed941b0e5c94e9f237922fd",
+      "poison_offset": 540,
+      "stream_bytes": 644,
+      "stream_sha256": "a43ac1cdc0710fff952a5d7d0c4cd9ed21b052396e7703dc289434f356f1a1ce",
+      "symbols": {
+        "_start": 4288676096,
+        "boot_call": 4288676144,
+        "boot_returned": 4288676146,
+        "callback_entry": 4288680186,
+        "callback_return": 4288680358,
+        "callback_valid": 4288680332,
+        "exception_stop": 4288676166,
+        "init_entry": 4288679936,
+        "init_return": 4288680166,
+        "init_valid": 4288680012,
+        "main_done": 1048624,
+        "main_entry": 1048576,
+        "main_word": 1048628,
+        "poison_entry": 4288680392
+      }
+    },
+    "missing-init": {
+      "image_bytes": 758,
+      "image_sha256": "2c43263fb23ba5caf08db2adc947e52d3407345c174b444d200da4a867e52c0a",
+      "main_sha256": "f5715114ac2d4276b9d12104000e5eeba0424768eed941b0e5c94e9f237922fd",
+      "poison_offset": 524,
+      "stream_bytes": 628,
+      "stream_sha256": "ba663b47ff572357617f153c0df92ea0b1c02b3658ad940da3543352cc04d9f6",
+      "symbols": {
+        "_start": 4288676096,
+        "boot_call": 4288676150,
+        "boot_returned": 4288676152,
+        "callback_entry": 4288680186,
+        "callback_return": 4288680358,
+        "callback_valid": 4288680332,
+        "exception_stop": 4288676172,
+        "init_entry": 4288679936,
+        "init_return": 4288680166,
+        "init_valid": 4288680012,
+        "main_done": 1048624,
+        "main_entry": 1048576,
+        "main_word": 1048628,
+        "poison_entry": 4288680392
+      }
+    },
+    "no-redirect": {
+      "image_bytes": 774,
+      "image_sha256": "4c58c41dc7da291e7ea09bd9035646c42171edbe718cf8fc120016026e89a7df",
+      "main_sha256": "f5715114ac2d4276b9d12104000e5eeba0424768eed941b0e5c94e9f237922fd",
+      "poison_offset": 540,
+      "stream_bytes": 644,
+      "stream_sha256": "80a03b52a63748dd1f22a5caae740b0b2cc81a87a3da82ece5af43c96b055466",
+      "symbols": {
+        "_start": 4288676096,
+        "boot_call": 4288676150,
+        "boot_returned": 4288676152,
+        "callback_entry": 4288680184,
+        "callback_return": 4288680356,
+        "callback_valid": 4288680330,
+        "exception_stop": 4288676172,
+        "init_entry": 4288679936,
+        "init_return": 4288680164,
+        "init_valid": 4288680012,
+        "main_done": 1048624,
+        "main_entry": 1048576,
+        "main_word": 1048628,
+        "poison_entry": 4288680390
+      }
+    },
+    "normal": {
+      "image_bytes": 774,
+      "image_sha256": "58e89dcf57f65b590a009baba60998d926df675670c7552e0b83ff42cbb73046",
+      "main_sha256": "f5715114ac2d4276b9d12104000e5eeba0424768eed941b0e5c94e9f237922fd",
+      "poison_offset": 540,
+      "stream_bytes": 644,
+      "stream_sha256": "a43ac1cdc0710fff952a5d7d0c4cd9ed21b052396e7703dc289434f356f1a1ce",
+      "symbols": {
+        "_start": 4288676096,
+        "boot_call": 4288676150,
+        "boot_returned": 4288676152,
+        "callback_entry": 4288680186,
+        "callback_return": 4288680358,
+        "callback_valid": 4288680332,
+        "exception_stop": 4288676172,
+        "init_entry": 4288679936,
+        "init_return": 4288680166,
+        "init_valid": 4288680012,
+        "main_done": 1048624,
+        "main_entry": 1048576,
+        "main_word": 1048628,
+        "poison_entry": 4288680392
+      }
+    },
+    "null-data": {
+      "image_bytes": 1254,
+      "image_sha256": "5315e7ee7aca7fe9cb0aa18dfc8faa240b37bea77d44e208e690253a47eae605",
+      "main_sha256": "f5715114ac2d4276b9d12104000e5eeba0424768eed941b0e5c94e9f237922fd",
+      "poison_offset": 540,
+      "stream_bytes": 644,
+      "stream_sha256": "a43ac1cdc0710fff952a5d7d0c4cd9ed21b052396e7703dc289434f356f1a1ce",
+      "symbols": {
+        "_start": 4288676096,
+        "boot_call": 4288676138,
+        "boot_returned": 4288676140,
+        "callback_entry": 4288680186,
+        "callback_return": 4288680358,
+        "callback_valid": 4288680332,
+        "exception_stop": 4288676160,
+        "init_entry": 4288679936,
+        "init_return": 4288680166,
+        "init_valid": 4288680012,
+        "main_done": 1048624,
+        "main_entry": 1048576,
+        "main_word": 1048628,
+        "poison_entry": 4288680392
+      }
+    }
+  },
+  "nand": {
+    "bytes": 4096,
+    "role": "same attached synthetic snapshot backing; not a NAND boot stream",
+    "sha256": "6c0294b06b53f1e89f9978a127bf9ee4182239125570f700aa47f39d79a6d278"
+  },
+  "schema": 1,
+  "sources": {
+    "build.py": "58bae94e095b9a4e8ac2dcb17bcb621f9db11ae65f49d0e1eeaf5d0a99d04c41",
+    "guest.s": "246b7f699679f3bc348604466084d3e7ba3dcca5447c679f270b9e13d0473782",
+    "link.ld": "e4a1dc0d74aa2434e72aef5f9683f49cdf64169c7e3bf1f4668d0c7b8134d772"
+  },
+  "stream_sha256": "a43ac1cdc0710fff952a5d7d0c4cd9ed21b052396e7703dc289434f356f1a1ce",
+  "toolchain": "GNU Binutils 2.44 bfin-elf; -mcpu=bf524; no C compiler/runtime"
+}
