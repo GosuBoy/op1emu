@@ -188,10 +188,67 @@ void SharedMaskAndRepeatedLow() {
     CheckEdgeReadback(portG, kPg0, kPg0, "rearmed PG0 edge is visible");
     Check(interruptLevel == 1, "rearmed PG0 interrupt is asserted");
 }
+// Register writes must never copy sticky readback into sampled input levels.
+// Exercise each write with PG3 input and PG4 output in the same port.
+void InputWritesPreserveSamples() {
+    for (u32 offset : {0x00u, 0x08u, 0x0Cu}) {
+        const std::string context = "write offset " + std::to_string(offset);
+        GPIO portG("PORTG", 0xFFC01500);
+        int interruptLevel = 0;
+        portG.BindInterruptB(41, [&](int, int level) { interruptLevel = level; });
+        portG.Write32(0x30, kPg4);
+        portG.Write32(0x40, kPg3);
+        portG.Write32(0x34, kPg3);
+        portG.Write32(0x38, kPg3);
+        portG.Write32(0x28, kPg3);
+        portG.SetPinInput(3, GPIOPinLevel::High);
+        portG.SetPinInput(3, GPIOPinLevel::Low);
+        portG.SetPinInput(3, GPIOPinLevel::High);
+        CheckEdgeReadback(portG, kPg3, kPg3, context + ": pending after return high");
+
+        // DATA performs a real read/modify/write; SET/TOGGLE receive the same
+        // mixed input/output mask. None may modify the sampled high input.
+        portG.Write32(offset, portG.Read32(0x00) | kPg4);
+        Check(portG.GetPinOutput(3) == GPIOPinLevel::High,
+              context + ": pending write preserves sampled high");
+        CheckEdgeReadback(portG, kPg3 | kPg4, kPg3 | kPg4,
+                          context + ": write changes output and preserves latch");
+        Check(interruptLevel == 1, context + ": pending IRQ survives write");
+        portG.Write32(0x04, kPg3);
+        CheckEdgeReadback(portG, kPg3, 0, context + ": acknowledgment clears latch");
+        portG.SetPinInput(3, GPIOPinLevel::Low);
+        CheckEdgeReadback(portG, kPg3, kPg3, context + ": next real fall is detected");
+        Check(interruptLevel == 1, context + ": next real fall asserts IRQ");
+
+        portG.Write32(0x04, kPg3);
+        // After acknowledgment DATA reads zero for a still-low input. A
+        // write-back must not turn that sampled low into a high, either.
+        portG.Write32(offset, portG.Read32(0x00));
+        Check(portG.GetPinOutput(3) == GPIOPinLevel::Low,
+              context + ": post-ack write preserves sampled low");
+        for (int i = 0; i < 3; ++i) {
+            portG.SetPinInput(3, GPIOPinLevel::Low);
+            CheckEdgeReadback(portG, kPg3, 0, context + ": repeated low has no false edge");
+            Check(interruptLevel == 0, context + ": repeated low leaves IRQ clear");
+        }
+        // Explicit zero and one writes cover both stored input values and
+        // verify normal output DATA/SET/TOGGLE behavior on the same register.
+        portG.Write32(offset, kPg3 | kPg4);
+        Check(portG.GetPinOutput(3) == GPIOPinLevel::Low,
+              context + ": one write preserves low input");
+        CheckEdgeReadback(portG, kPg3 | kPg4, kPg4, context + ": output set with input ignored");
+        portG.Write32(offset, 0);
+        CheckEdgeReadback(portG, kPg3 | kPg4, offset == 0 ? 0 : kPg4,
+                          context + ": zero write obeys output register semantics");
+        portG.Write32(0x04, kPg4);
+        CheckEdgeReadback(portG, kPg3 | kPg4, 0, context + ": output clear still works");
+    }
+}
 } // namespace
 
 int main() {
     Stock246Pg3FallingEdge();
     SharedMaskAndRepeatedLow();
-    std::puts("gpio-edge-test: sticky readback, acknowledgment, PG3 routing and PG0 passed");
+    InputWritesPreserveSamples();
+    std::puts("gpio-edge-test: sticky readback, input writes, acknowledgment, PG3 routing and PG0 passed");
 }
