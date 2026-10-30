@@ -24,6 +24,9 @@ _start:
     SET P0, 0xffe0200c
     ADDR R0, exception_stop
     [P0] = R0;
+    ADDR P0, mailbox
+    R0 = -1;
+    [P0 + 0x3c] = R0; /* distinguish actual ROM zero fill from constructor zeros */
 .if BOOT_DATA == 0
     ADDR R0, stream
     R1 = 0;
@@ -82,6 +85,9 @@ init_entry:
     SET R1, 0xff904000
     CC = R0 < R1 (IU);
     IF !CC JUMP init_bad_pointer;
+    R0 = [P5 + 0x3c];
+    CC = R0 == 0;
+    IF !CC JUMP init_bad_fill;
 init_valid:
     [P5 + 0x10] = R4;
     R0 = SP;
@@ -137,6 +143,10 @@ init_return:
     (R7:4, P5:3) = [SP++];
     UNLINK;
     RTS;
+init_bad_fill:
+    SET R0, 0xe007
+    [P5] = R0;
+    JUMP.S init_return;
 init_bad_pointer:
     SET R0, 0xe001
     [P5] = R0;

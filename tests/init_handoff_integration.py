@@ -49,6 +49,8 @@ def main():
     phases={p['name']:p['state'] for p in positive['phases']}
     assert all(k in phases for k in ['init_entry','init_valid','init_return','callback_entry','callback_valid','callback_return','main_entry'])
     entry=phases['init_entry'];done=phases['init_return'];main=phases['main_entry'];final=positive['final']
+    assert phases['boot_call']['mailbox'][15]==0xffffffff
+    assert entry['mailbox'][15]==done['mailbox'][15]==final['mailbox'][15]==0
     boot=entry['dpregs'][0];assert 0xffb00000<=boot<=0xffb00fa0 and boot%4==0
     assert entry['r0_boot_data']['source']==0xff900000+manifest['images']['normal']['poison_offset']
     assert done['mailbox'][8]-done['mailbox'][7]==16
@@ -79,7 +81,7 @@ def main():
     assert direct['final']['mmr']['sdbctl']==0 and direct['final']['mmr']['sdrrc']==0x81a
     assert direct['final']['mmr']['sic_iwr0']==direct['final']['mmr']['sic_iwr1']==0xffffffff
     for name,error in [('null-data',0xe001),('misaligned-data',0xe001),('malformed-data',0xe001),
-                       ('bad-context',0xe002),('bad-init',0xe003),('no-redirect',0xe004),('missing-init',0xe004)]:
+                       ('bad-context',0xe002),('bad-init',0xe003),('no-redirect',0xe004),('missing-init',0xe004),('missing-fill',0xe007)]:
         code,r=run(name,name);assert code==3 and r['status']=='guest_rejected',(name,r)
         assert r['final']['mailbox'][0]==error,(name,r)
     code,r=run('direct-stream','stream','direct-stream')

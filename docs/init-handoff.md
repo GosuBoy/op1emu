@@ -105,8 +105,8 @@ uploads, not NAND, OTP, ELF or private evidence.
 
 ## Reproduced state transitions
 
-For the committed normal image, the local deterministic run retires 2,254
-packets in 2,254 Run calls, including 2,069 calls in ROM, and reaches completion
+For the committed normal image, the local deterministic run retires 2,261
+packets in 2,261 Run calls, including 2,069 calls in ROM, and reaches completion
 at 90,156 model cycles (the rest are IDLE cycles). These are functional issue
 counts at the existing fixed 400-MHz time model, not measured hardware timing.
 
@@ -117,7 +117,7 @@ counts at the existing fixed 400-MHz time model, not measured hardware timing.
 | Callback | Same live R0; scratchpad buffer in R1; single-block flags 13 in R2; one validated invocation | Not executed |
 | Loaded test word | `A1B2C3D4` -> `55AA11EE` in guest callback | `A1B2C3D4` |
 | Bank/refresh | Guest requests SDBCTL=1 / SDRRC=0300 with 16-bit stores | Constructor 0 / 081A |
-| Memory | ROM zero fill; guest writes `13579BDF` sentinel; MAIN copied after INIT | No INIT sentinel |
+| Memory | Guest dirties a mailbox word to FFFFFFFF; ROM FILL clears it to zero; guest writes `13579BDF` sentinel; MAIN copied after INIT | No INIT sentinel |
 | SIC wake masks | Guest requests IWR0=1, IWR1=0 | Constructor FFFFFFFF / FFFFFFFF |
 | SYSCFG | Guest changes 30 -> 32 | 30 |
 | Entry | ROM FIRST sets EVT1=00100000; actual MAIN entry observed | Loader sets PC directly; EVT1 remains 0 |
@@ -132,7 +132,7 @@ separation prevents attributing every direct-loader difference to initialization
 Both native state receipts and the selected event/history files are byte-identical
 across the positive repeats. The integration summary records their SHA256 values.
 The normal image SHA256 is
-`58e89dcf57f65b590a009baba60998d926df675670c7552e0b83ff42cbb73046`;
+`0edac2d7b2188bb3c3a55d5e3e9adc8c3a4156dcbf7a23577f68a7c09945610f`;
 the MAIN payload, shared by every case, is
 `f5715114ac2d4276b9d12104000e5eeba0424768eed941b0e5c94e9f237922fd`.
 The generated NAND-pattern hash is
@@ -140,7 +140,8 @@ The generated NAND-pattern hash is
 
 Negative controls publish E001 for null/misaligned/malformed data, E002 for bad
 callback context, E003 for omitted synthetic memory setup, and E004 for missing
-INIT or ignored source redirection. Directly running the stream's first DXE
+INIT or ignored source redirection. E007 identifies a missing zero fill: the
+bootstrap first writes a dirty marker, so constructor zeros cannot satisfy this check. Directly running the stream's first DXE
 produces E001. Requesting a ROM qualification for the direct image produces
 `contract_failure`. Reduced cycle/Run limits stop exactly at 19 cycles / 7 calls;
 a one-event cap reports incomplete observation; a one-ms parent deadline reports
@@ -161,7 +162,7 @@ or subsequent implementation phase.
 ## Local validation receipt
 
 The local macOS build used Apple clang 17.0.0 and LLVM 15.0.7. The focused
-native regressions pass 2/2, including 16 integration runs/controls, and the
+native regressions pass 2/2, including 17 integration runs/controls, and the
 GNU 2.44 fixture rebuild matches every committed image and source/symbol manifest.
 The full native suite passed 40/41: the unchanged USB/IP loopback test failed
 its connection check, and a separate loopback-listen check returned EPERM in

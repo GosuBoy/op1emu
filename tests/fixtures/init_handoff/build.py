@@ -43,7 +43,7 @@ def build(output, assembler, linker):
     manifest = {'schema':1,'toolchain':'GNU Binutils 2.44 bfin-elf; -mcpu=bf524; no C compiler/runtime',
                 'sources':{n:sha((ROOT/n).read_bytes()) for n in ['guest.s','link.ld','build.py']},'images':{}}
     commands=[]
-    for name, case, bootdata in [('normal',0,0),('bad-context',1,0),('bad-init',2,0),('no-redirect',3,0),('null-data',0,1),('misaligned-data',0,2),('malformed-data',0,3),('missing-init',0,0),('direct',0,0)]:
+    for name, case, bootdata in [('normal',0,0),('bad-context',1,0),('bad-init',2,0),('no-redirect',3,0),('null-data',0,1),('misaligned-data',0,2),('malformed-data',0,3),('missing-init',0,0),('missing-fill',0,0),('direct',0,0)]:
         obj=output/(name+'.o'); image=output/(name+'.elf')
         cmd=[str(assembler),'-mcpu=bf524','--fatal-warnings','--defsym',f'CASE={case}','--defsym',f'BOOT_DATA={bootdata}','-o',str(obj),str(ROOT/'guest.s')]
         subprocess.run(cmd,check=True);commands.append(cmd)
@@ -52,7 +52,8 @@ def build(output, assembler, linker):
         sections,symbols=elf(image.read_bytes());init_addr,init=sections['.init'];main_addr,main=sections['.main'];entry,bootstrap=sections['.bootstrap']
         # ROM stream starts with a FIRST/IGNORE marker. INIT code is loaded by
         # ROM, not preinstalled by the host in the positive case.
-        stream=block(init_addr,flags=0x5006)+block(init_addr,init)+block(0xff800000,flags=0x106,count=0x100)
+        stream=block(init_addr,flags=0x5006)+block(init_addr,init)
+        if name != 'missing-fill':stream+=block(0xff800000,flags=0x106,count=0x100)
         if name != 'missing-init':stream+=block(init_addr,flags=0x806)
         poison_offset=len(stream)
         stream+=block(symbols['poison_entry'],flags=0xd006)

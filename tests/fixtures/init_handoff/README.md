@@ -21,7 +21,7 @@ image hashes, symbols and the shared MAIN payload hash.
 The outer image uses the ordinary direct loader to install a small guest caller
 and a nested stream in L1 data RAM. That caller sets a scratchpad stack and enters
 the existing embedded ROM through the documented `BFROM_MEMBOOT` API. The ROM
-loads INIT code, expands a zero fill, processes a zero-payload INIT marker,
+loads INIT code, clears a previously dirtied mailbox word with zero fill, processes a zero-payload INIT marker,
 passes live boot data in R0, and calls the guest INIT. INIT installs its callback
 and changes the active source by 16 bytes. Without this change the ROM reaches a
 poison FIRST/FINAL header and the guest publishes error E004. With it, the ROM
@@ -38,7 +38,7 @@ The MAIN section is byte-identical in every image. `direct.ldr` loads it with th
 existing direct loader and never runs INIT or the callback. `stream.ldr` contains
 the inner stream: attempting to run its first DXE directly fails the live-data
 check. Other images deliberately corrupt the callback context, omit SDRAM setup,
-ignore redirection, remove the INIT marker, or supply null, misaligned or aligned
+ignore redirection, remove the INIT marker or zero fill, or supply null, misaligned or aligned
 but malformed boot data. These are independent synthetic controls; no existing
 firmware image or admission check is modified.
 
