@@ -1,153 +1,20 @@
-name: CI
+name: Firmware browser preview
 
-# Pull requests run once (as pull_request), main once per push; a newer push
-# to a pull request cancels the run still going. Each push to main is a
-# group of its own: in one group a third push would cancel the second's run
-# while it waited.
+# Fork-only preview. This branch never changes main or the upstream PR.
 on:
   push:
-    branches: [main]
-    paths-ignore: ["**.md"]
-  pull_request:
-    paths-ignore: ["**.md"]
+    branches: [preview/web-firmware-provisioning]
+
+permissions:
+  contents: read
 
 concurrency:
-  group: ci-${{ github.event.pull_request.number || github.sha }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: firmware-browser-preview
+  cancel-in-progress: true
 
 jobs:
-  python:
-    runs-on: ubuntu-22.04
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.10"
-      - run: pip install pytest
-      - run: python3 -m pytest tools/tests -q
-
-  libcxx:
-    # libc++'s system_clock counts microseconds, not libstdc++'s nanoseconds;
-    # guest time converts to it (TimeSource::SystemNow, DueNs).
-    runs-on: ubuntu-22.04
-    steps:
-      - uses: actions/checkout@v4
-      - run: sudo apt-get update && sudo apt-get install -y clang-15 libc++-15-dev libc++abi-15-dev
-      - name: TimeSource test with libc++
-        run: |
-          clang++-15 -std=c++17 -stdlib=libc++ -Wall -Wextra -Werror -I src \
-            -o time-source-test tests/time_source_test.cpp
-          ./time-source-test
-
-  # On Linux with and without the profiling hooks; on macOS (Apple silicon,
-  # AArch64) without them, which are Linux's (perf_event, the perf JIT
-  # listener). The Linux jobs keep their names.
-  build-test:
-    name: build-test (${{ matrix.os != 'ubuntu-22.04' && format('{0}, ', matrix.os) || '' }}profiling=${{ matrix.profiling }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - {os: ubuntu-22.04, profiling: "OFF"}
-          - {os: ubuntu-22.04, profiling: "ON"}
-          - {os: macos-15, profiling: "OFF"}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
-      - name: Install dependencies (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y llvm-15 llvm-15-dev cmake ninja-build \
-            libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev \
-            libgl1-mesa-dev ccache
-          echo "LLVM_DIR=/usr/lib/llvm-15/lib/cmake/llvm" >> "$GITHUB_ENV"
-
-      - name: Install dependencies (macOS)
-        if: runner.os == 'macOS'
-        run: |
-          brew install llvm@15 ninja ccache
-          echo "LLVM_DIR=$(brew --prefix llvm@15)/lib/cmake/llvm" >> "$GITHUB_ENV"
-
-      # With ccache's objects go the stencils of the last bcore-stencilgen
-      # (ext/bcore/cmake/StencilCache.cmake): the same generator relinked
-      # from them copies its stencils instead of building them for minutes.
-      - name: Restore ccache
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cache/ccache
-            ~/.cache/bcore-stencils
-          key: ccache-${{ matrix.os }}-${{ matrix.profiling }}-${{ github.sha }}
-          restore-keys: ccache-${{ matrix.os }}-${{ matrix.profiling }}-
-
-      # The FetchContent dependencies' sources, keyed by the CMakeLists.txt
-      # that names their tags: with them Configure takes seconds, not a
-      # minute of cloning, and needs no network.
-      - name: Restore dependency sources
-        id: deps
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/op1-deps
-          key: deps-${{ hashFiles('CMakeLists.txt') }}
-
-      - name: Configure
-        env:
-          CCACHE_BASEDIR: ${{ github.workspace }}
-          CCACHE_MAXSIZE: 500M
-        run: |
-          ccache --zero-stats
-          deps=()
-          for d in ~/.cache/op1-deps/*/; do
-            [ -d "$d" ] || continue
-            name=$(basename "$d")
-            upper=$(echo "$name" | tr '[:lower:]' '[:upper:]')  # bash 3.2 on macOS has no ${name^^}
-            deps+=("-DFETCHCONTENT_SOURCE_DIR_${upper}=${d%/}")
-          done
-          cmake -S . -B build -GNinja -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
-            -DLLVM_DIR="$LLVM_DIR" \
-            -DOP1_BUILD_HEADLESS_TESTS=ON \
-            -DOP1_BUILD_DMA_TESTS=ON \
-            -DBCORE_STENCIL_CACHE_DIR=$HOME/.cache/bcore-stencils \
-            -DENABLE_PROFILING=${{ matrix.profiling }} \
-            "${deps[@]}"
-
-      # A miss: keep what Configure cloned (without .git) for the next run.
-      - name: Keep dependency sources
-        if: steps.deps.outputs.cache-hit != 'true'
-        run: |
-          mkdir -p ~/.cache/op1-deps
-          for d in build/_deps/*-src; do
-            name=$(basename "$d" -src)
-            cp -a "$d" ~/.cache/op1-deps/"$name"
-            rm -rf ~/.cache/op1-deps/"$name"/.git
-          done
-          du -sh ~/.cache/op1-deps
-
-      - name: Build
-        env:
-          CCACHE_BASEDIR: ${{ github.workspace }}
-          CCACHE_MAXSIZE: 500M
-        run: |
-          cmake --build build
-          ccache --show-stats
-
-      # Every test the build registers (bcore's own are not: they run in
-      # bcore's CI). None needs a NAND image or firmware.
-      - name: Test (synthetic inputs only, no NAND or firmware)
-        run: ctest --test-dir build -j$(getconf _NPROCESSORS_ONLN) --output-on-failure
-
-      - name: CLI sanity
-        run: ./build/op1emu --help
-
-  # The browser's build (web/README.md), with bcore's WebAssembly tools
-  # (ext/bcore/tools/wasm): the module, an LDR to its end under Node and in
-  # Chrome, and the site, which a push to main publishes (pages).
   wasm:
+    if: github.repository == 'GosuBoy/op1emu'
     runs-on: ubuntu-22.04
     timeout-minutes: 45
     steps:
@@ -230,7 +97,7 @@ jobs:
       - name: Build the site
         working-directory: web
         run: |
-          npm ci
+          npm ci --ignore-scripts
           npm test
           npm run build
 
@@ -251,16 +118,20 @@ jobs:
         working-directory: web
         run: node tools/panel-browser.mjs dist node_modules/playwright-core
 
+      - name: Record preview source
+        run: |
+          printf '{"source_commit":"%s","feature_commit":"6049f9e38056e4cfa4115309e134ab2560a0e7c9","preview":true}\n' "$GITHUB_SHA" > web/dist/preview-version.json
+
       - name: Upload the site
         if: github.event_name == 'push'
         uses: actions/upload-pages-artifact@v3
         with:
           path: web/dist
 
-  # The site at https://op1emu.github.io/op1emu/ (Settings, Pages: the source
+  # The preview at https://gosuboy.github.io/op1emu/ (Settings, Pages: the source
   # is GitHub Actions).
   pages:
-    if: github.event_name == 'push'
+    if: github.repository == 'GosuBoy/op1emu'
     needs: wasm
     runs-on: ubuntu-22.04
     permissions:
