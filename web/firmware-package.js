@@ -1,15 +1,12 @@
-/** In-memory original OP-1 package/loader decoding. No network, persistence,
- * device access, execution or bundled secrets. Ported from checked op-decryptor2. */
+/** Parse original OP-1 update packages without modifying their loaders. */
 export const MAX_INPUT_BYTES = 64 * 1024 * 1024;
 export const MAX_ARCHIVE_BYTES = 256 * 1024 * 1024;
 export const MAX_DICTIONARY_BYTES = 64 * 1024 * 1024;
 export const STOCK_246_SHA256 = 'c5315218f825f143b415ca554516541898abee843d3a236df0b54c04e1fb13a9';
-export const ENCRYPTED_246_SHA256 = 'f79d299f6f9019c998013a4176223a6a1bc999a2d8c54451346861f6ea455c74';
-export const PLAINTEXT_246_SHA256 = '1e806672dc440d495987c6b1f33b300876e6a3bb1d58254aac5fe60c960e906a';
+const ENCRYPTED_246_SHA256 = 'f79d299f6f9019c998013a4176223a6a1bc999a2d8c54451346861f6ea455c74';
 const check = (ok, message) => { if (!ok) throw new Error(message); };
 const asBytes = value => value instanceof Uint8Array ? value : new Uint8Array(value);
 const view = bytes => new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-const xor = bytes => bytes.reduce((a, b) => a ^ b, 0);
 const trustedPackage = Symbol('canonical-package');
 export function crc32(input) {
   let crc = 0xffffffff;
@@ -74,13 +71,9 @@ export function parseTar(input) {
 }
 /** Low-level decoder injection MUST enforce limits during decoding and return
  * {bytes: Uint8Array, bytesRead: number}. Production uses extractFirmware246. */
-export async function extractFirmware(input, {format = 'auto', decompressLzma, [trustedPackage]: trusted = false} = {}) {
+export async function extractFirmware(input, {decompressLzma, [trustedPackage]: trusted = false} = {}) {
   const bytes = asBytes(input);
   check(bytes.length <= MAX_INPUT_BYTES, 'Firmware input exceeds 64 MiB limit');
-  check(['auto', 'op1', 'ldr'].includes(format), 'Unsupported firmware format');
-  const packageMatches = bytes.length >= 17 && bytes[4] < 225 && view(bytes).getUint32(0, true) === crc32(bytes.subarray(4));
-  if (format === 'auto') format = !packageMatches && bytes.length >= 16 && bytes[3] === 0xad && xor(bytes.subarray(0, 16)) === 0 ? 'ldr' : 'op1';
-  if (format === 'ldr') return {loader: bytes, entries: [], format, packageCrc32: null};
   check(bytes.length >= 17, 'Truncated OP-1 package header');
   const compressed = bytes.subarray(4), header = view(compressed), packageCrc32 = crc32(compressed);
   check(view(bytes).getUint32(0, true) === packageCrc32, 'Package CRC32 mismatch');
@@ -98,95 +91,22 @@ export async function extractFirmware(input, {format = 'auto', decompressLzma, [
   const entries = parseTar(result.bytes);
   const loader = entries.find(entry => entry.name === 'OP1_vdk.ldr' && entry.type === 'file')?.bytes;
   check(loader, 'TAR does not contain a root OP1_vdk.ldr regular file');
-  return {loader, entries, format, packageCrc32};
-}
-export function parseKeyHex(text) {
-  check(typeof text === 'string' && /^[0-9a-fA-F]{32}$/.test(text), 'Key must contain exactly 32 hexadecimal digits');
-  return Uint32Array.from({length: 4}, (_, i) => parseInt(text.slice(i * 8, i * 8 + 8), 16));
-}
-export function parseOtpText(text) {
-  check(typeof text === 'string' && text.length <= 1024 * 1024, 'OTP text exceeds limit or is invalid');
-  let key = null;
-  for (const line of text.split(/\r?\n/)) {
-    const fields = line.trim().split(/\s+/);
-    if (!/^!?0xd0$/i.test(fields[0])) continue;
-    check(key === null, 'OTP dump contains duplicate page 0xd0 entries');
-    check(fields.length === 3 && fields[1].length === 16 && fields[2].length === 16, 'OTP page 0xd0 must contain exactly two 16-digit hexadecimal words');
-    key = parseKeyHex(fields[1] + fields[2]);
-  }
-  check(key !== null, 'OTP dump does not contain page 0xd0'); return key;
-}
-export function decryptXteaBlock(input, key) {
-  const bytes = asBytes(input);
-  check(bytes.length === 8 && key instanceof Uint32Array && key.length === 4, 'Invalid XTEA block or key shape');
-  let left = view(bytes).getUint32(0, true), right = view(bytes).getUint32(4, true), sum = 0xc6ef3720;
-  const mix = n => (((n << 4) ^ (n >>> 5)) + n) >>> 0;
-  for (let i = 0; i < 32; i++) {
-    right = (right - (mix(left) ^ ((sum + key[(sum >>> 11) & 3]) >>> 0))) >>> 0;
-    sum = (sum - 0x9e3779b9) >>> 0;
-    left = (left - (mix(right) ^ ((sum + key[sum & 3]) >>> 0))) >>> 0;
-  }
-  const out = new Uint8Array(8), data = view(out);
-  data.setUint32(0, left, true); data.setUint32(4, right, true); return out;
-}
-/** Structural transformation, NOT authentication. Validate before mounting/execution.
- * OTP never appears in reports/errors. The temporary parsed key is cleared. */
-export function decryptLoader(input, otpText = null) {
-  const source = asBytes(input);
-  check(source.length <= MAX_INPUT_BYTES, 'Loader exceeds 64 MiB limit');
-  const bytes = Uint8Array.from(source), data = view(bytes);
-  const key = otpText === null ? null : parseOtpText(otpText);
-  const report = {records: 0, payloadRecords: 0, fillRecords: 0, encryptedRecords: 0, decryptedUnits: 0, encryptedTailUnits: 0, finalOffset: 0, finalEnd: 0, trailerBytes: 0};
-  let offset = 0;
-  try {
-    while (true) {
-      check(offset !== bytes.length, 'Loader ended without a FINAL record');
-      check(offset + 16 <= bytes.length, 'Truncated loader header');
-      const header = bytes.subarray(offset, offset + 16);
-      check(header[3] === 0xad, 'Invalid loader signature');
-      check(xor(header) === 0, 'Invalid loader header XOR checksum');
-      const flags = data.getUint16(offset, true), fill = !!(flags & 0x100), callback = !!(flags & 0x400);
-      check(!callback || (!fill && (flags & 0x2000)), 'Unsupported CALLBACK flags');
-      const length = fill ? 0 : data.getUint32(offset + 8, true), start = offset + 16, end = start + length;
-      check(end <= bytes.length, 'Truncated loader payload'); report.records++;
-      if (fill) report.fillRecords++; else if (length) report.payloadRecords++;
-      if (callback) {
-        check(key, 'OTP page 0xd0 is required for encrypted CALLBACK records'); report.encryptedRecords++;
-        for (let p = start; p + 8 <= end; p += 24) {
-          bytes.set(decryptXteaBlock(bytes.subarray(p, p + 8), key), p); report.decryptedUnits++;
-          if (end - p < 24) report.encryptedTailUnits++;
-        }
-        data.setUint16(offset, flags & ~0x400, true); header[2] = 0; header[2] = xor(header);
-      }
-      if (flags & 0x8000) {
-        report.finalOffset = offset; report.finalEnd = end; report.trailerBytes = bytes.length - end;
-        return {bytes, report};
-      }
-      offset = end;
-    }
-  } finally { key?.fill(0); }
+  return {loader, entries, packageCrc32};
 }
 export async function sha256(input) {
   check(globalThis.crypto?.subtle, 'SHA-256 requires a secure browser context');
   const digest = new Uint8Array(await globalThis.crypto.subtle.digest('SHA-256', asBytes(input)));
   return Array.from(digest, byte => byte.toString(16).padStart(2, '0')).join('');
 }
-export async function validateFirmware246(input) {
-  const digest = await sha256(input);
-  check(digest === PLAINTEXT_246_SHA256, 'Firmware 246 plaintext SHA-256 mismatch; unsupported firmware or incorrect OTP (nothing loaded)');
-  return {version: 246, sha256: digest};
-}
-/** Production gate: only canonical stock-246 compressed bytes reach a decoder.
- * Prevents attacker-chosen streams reaching callback decoders without output caps.
- * Raw loaders must also be canonical. Validate plaintext after decryption. */
+/** Only the canonical package reaches the LZMA decoder. Both boot streams
+ * remain exactly as shipped in the archive. */
 export async function extractFirmware246(input, options = {}) {
   const bytes = asBytes(input);
   check(bytes.length <= MAX_INPUT_BYTES, 'Firmware input exceeds 64 MiB limit');
-  const digest = await sha256(bytes);
-  if (digest === STOCK_246_SHA256) {
-    const result = await extractFirmware(bytes, {...options, format: 'op1', [trustedPackage]: true});
-    check(await sha256(result.loader) === ENCRYPTED_246_SHA256, 'Canonical package loader SHA-256 mismatch'); return result;
-  }
-  check(digest === ENCRYPTED_246_SHA256 || digest === PLAINTEXT_246_SHA256, 'Unsupported firmware: select the original OP-1 firmware 246 package or its canonical loader');
-  return extractFirmware(bytes, {format: 'ldr'});
+  check(await sha256(bytes) === STOCK_246_SHA256, 'Unsupported firmware: select the original OP-1 firmware 246 .op1 package');
+  const result = await extractFirmware(bytes, {...options, [trustedPackage]: true});
+  const bootloader = result.entries.find(entry => entry.name === 'te-boot.ldr' && entry.type === 'file')?.bytes;
+  check(bootloader, 'TAR does not contain a root te-boot.ldr regular file');
+  check(await sha256(result.loader) === ENCRYPTED_246_SHA256, 'Canonical package loader SHA-256 mismatch');
+  return {...result, bootloader};
 }

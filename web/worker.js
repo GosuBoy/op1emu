@@ -20,18 +20,18 @@
 import { BOOT_ROM_SIZE, parseBootRom, sha256 } from "./bootrom.js";
 import { attachTierWorker } from "./compile-helpers.js";
 import { opfsFs } from "./opfs-fs.js";
-import {extractFirmware246,decryptLoader,validateFirmware246,sha256 as firmwareHash,ENCRYPTED_246_SHA256} from './firmware-package.js';
+import {extractFirmware246, MAX_INPUT_BYTES} from './firmware-package.js';
 import {decompressLzma} from './firmware-lzma.js';
 import {provisionNand} from './firmware-nand.js';
 import {stageProfile,PROFILES} from './firmware-storage.js';
-import {loadConfiguration,commitConfiguration,profileConfiguration,inputFile,inputDirectory,CONFIGURATIONS,MANUAL_INPUTS} from './boot-configuration.js';
+import {loadConfiguration,commitConfiguration,profileConfiguration,inputFile,inputDirectory,reclaimObsoleteInputs,CONFIGURATIONS,MANUAL_INPUTS,INPUT_SIZES} from './boot-configuration.js';
 let activeConfiguration;
 let preparing=null;
 const cancelledPreparations=new Set();
 
 const NAMES = { nand: "nand.bin", otp: "otp.bin" };
 const BOOT_ROM = "bootrom.bin";
-const SIZES = { nand: 553648128, otp: 8192 };  // MT29F4G08's pages and OOBs; the OTP's
+const SIZES = INPUT_SIZES;
 const SLICE_MS = 8;
 const FLUSH_MS = 2000;
 // Promotions to tier 1 (op1_tiering), compiled by the tier Worker
@@ -55,7 +55,7 @@ async function directory() {
 }
 
 async function active() {
-  if (activeConfiguration === undefined) activeConfiguration = await loadConfiguration(await directory());
+  if (!handles) activeConfiguration = await loadConfiguration(await directory());
   return activeConfiguration;
 }
 async function files() {
@@ -69,8 +69,9 @@ async function files() {
       out[key]={size:file.size,modified:file.lastModified};
     }
   }
-  out.firmware=config?.kind==='firmware'?{pages:config.pages}:null;
-  out.ready=Boolean(config?.nand && (config.kind==='firmware'||config.otp));
+  out.legacyFirmware = Boolean(config?.ldr);
+  out.firmware = config?.kind === 'firmware' && config.otp ? {pages:config.pages} : null;
+  out.ready = Boolean(config?.nand && config.otp);
   return out;
 }
 
@@ -106,6 +107,7 @@ async function importFile(key, file) {
     config[key]={path:[MANUAL_INPUTS],name};
     activeConfiguration=await commitConfiguration(root,previous,config);
     committed=true;
+    await reclaimObsoleteInputs(root, activeConfiguration);
   } finally { if(!committed)await dir.removeEntry(name).catch(()=>{}); }
 }
 
@@ -131,28 +133,24 @@ async function prepareFirmware({file,otpFile,requestId}) {
     if(handles||op1)throw new Error('Reload the page before preparing firmware');
     if(cancelledPreparations.has(requestId))controller.abort();
     controller.signal.throwIfAborted();
-    if(file.size>64*1024*1024)throw new Error('Firmware file exceeds 64 MiB limit');
-    const root=await directory();status('Validating firmware 246 package');
-    const parsed=await extractFirmware246(new Uint8Array(await file.arrayBuffer()),{
-      decompressLzma:(bytes,limits)=>decompressLzma(bytes,{...limits,signal:controller.signal}),
+    if (file.size > MAX_INPUT_BYTES) throw new Error('Firmware file exceeds 64 MiB limit');
+    if (otpFile?.size !== SIZES.otp) throw new Error('Choose a matching 8 KiB otp.bin');
+    const otp = new Uint8Array(await otpFile.arrayBuffer());
+    if (otp.length !== SIZES.otp) throw new Error('Incomplete OTP read');
+    const root = await directory();
+    status('Validating firmware 246 package');
+    const parsed = await extractFirmware246(new Uint8Array(await file.arrayBuffer()), {
+      decompressLzma: (bytes, limits) => decompressLzma(bytes, {...limits, signal: controller.signal}),
     });
-    if(!parsed.entries.some(e=>e.name.startsWith('content/')))throw new Error('Choose a complete .op1 package, not a standalone loader');
-    let keyText=null;
-    if(await firmwareHash(parsed.loader)===ENCRYPTED_246_SHA256){
-      status('Preparing decryption key locally');
-      if(otpFile){if(otpFile.size>65536)throw new Error('OTP text file exceeds 64 KiB limit');keyText=await otpFile.text();}
-      else throw new Error('Encrypted firmware requires a local OTP text file you are authorized to use.');
-    }
-    const {bytes:loader}=decryptLoader(parsed.loader,keyText);keyText=null;
-    await validateFirmware246(loader);controller.signal.throwIfAborted();
-    const space=await navigator.storage.estimate();
-    if(space.quota&&space.quota-(space.usage??0)<554*1024*1024)throw new Error('Not enough browser storage for a new firmware profile; free space first');
-    let previous=await active();
-    // Pin migration's previous selection before creating a discoverable profile.
-    // A crash between staging and selection must not activate the staged input.
-    if(previous.sequence===0)previous=activeConfiguration=await commitConfiguration(root,previous,previous.config);
-    const profile=await stageProfile(root,loader,parsed.entries.filter(e=>e.name==='content'||e.name.startsWith('content/')),provisionNand,{
-      signal:controller.signal,onProgress:p=>status(`Preparing NAND (${p.phase}): ${Math.floor(100*p.completed/p.total)}%`),
+    parsed.entries = parsed.entries.filter(e => e.name === 'content' || e.name.startsWith('content/'));
+    controller.signal.throwIfAborted();
+    const space = await navigator.storage.estimate();
+    if (space.quota && space.quota - (space.usage ?? 0) < SIZES.nand + SIZES.otp)
+      throw new Error('Not enough browser storage for a new firmware image; free space first');
+    const previous = await active();
+    const profile = await stageProfile(root, parsed, otp, provisionNand, {
+      signal: controller.signal,
+      onProgress: p => status(`Preparing NAND (${p.phase}): ${Math.floor(100*p.completed/p.total)}%`),
     });
     try {
       controller.signal.throwIfAborted();
@@ -161,7 +159,9 @@ async function prepareFirmware({file,otpFile,requestId}) {
       await (await root.getDirectoryHandle(PROFILES)).removeEntry(profile.name,{recursive:true}).catch(()=>{});
       throw e;
     }
-    post({type:'prepared'});status('Firmware 246 prepared. Press Start to run the new profile.');
+    post({type:'prepared'});
+    await reclaimObsoleteInputs(root, activeConfiguration);
+    status('Firmware 246 prepared. Press Start to boot.');
   }finally{preparing=null;cancelledPreparations.delete(requestId);post({type:'preparing',value:false});post({type:'files',files:await files(),syncAccess});}
 }
 async function deleteFiles() {
@@ -382,8 +382,7 @@ function applyCom() {
 async function start({ build, site, snapshot, audioMs, audioPort: port, cached }) {
   if(op1||handles)throw new Error('A native session already exists');
   const {config}=await active();
-  if(!config?.nand || (config.kind==='manual'&&!config.otp))throw new Error('Choose a NAND image and matching 8 KiB OTP, or prepare firmware first');
-  const profile=config.kind==='firmware';
+  if (!config?.nand || !config.otp) throw new Error('Choose a NAND image and matching 8 KiB OTP, or prepare firmware first');
   const compiled = compileAhead(build, site, cached);
   await ensureBootRom(build.bootRom);
   const dir = await directory();
@@ -392,7 +391,7 @@ async function start({ build, site, snapshot, audioMs, audioPort: port, cached }
     const source=await inputDirectory(dir,config.nand);
     handles.nand=await(await source.getFileHandle(config.nand.name)).createSyncAccessHandle();
     handles.bootRom=await(await dir.getFileHandle(BOOT_ROM)).createSyncAccessHandle();
-    if(!profile)handles.otp=await(await(await inputDirectory(dir,config.otp)).getFileHandle(config.otp.name)).createSyncAccessHandle();
+    handles.otp=await(await(await inputDirectory(dir,config.otp)).getFileHandle(config.otp.name)).createSyncAccessHandle();
   } catch (e) {
     for (const handle of Object.values(handles)) handle.close();
     handles = null;
@@ -402,16 +401,8 @@ async function start({ build, site, snapshot, audioMs, audioPort: port, cached }
   const { FS } = op1;
   dataFs = opfsFs(FS);
   FS.mkdir("/data");
-  FS.mount(dataFs,{files:{[NAMES.nand]:handles.nand,[BOOT_ROM]:handles.bootRom,...(handles.otp?{[NAMES.otp]:handles.otp}:{})}},'/data');
-  if(profile){
-    // Match a fresh desktop direct-LDR working directory. Native OTP creates
-    // its own default identity; local key text is never treated as otp.bin.
-    FS.chdir('/');
-    const rom=new Uint8Array(handles.bootRom.getSize());handles.bootRom.read(rom,{at:0});
-    FS.writeFile('/bootrom.bin',rom);
-    const loader=new Uint8Array(await(await inputFile(dir,config.ldr)).arrayBuffer());
-    await validateFirmware246(loader);FS.writeFile('/firmware.ldr',loader);
-  }else FS.chdir('/data');
+  FS.mount(dataFs, {files: {[NAMES.nand]: handles.nand, [BOOT_ROM]: handles.bootRom, [NAMES.otp]: handles.otp}}, "/data");
+  FS.chdir("/data");
   op1.onFrame = frame;
   if (port) {
     audioPort = port;
@@ -424,7 +415,7 @@ async function start({ build, site, snapshot, audioMs, audioPort: port, cached }
       audioPort.postMessage(frames, [frames.buffer]);
     };
   }
-  const path = op1.stringToNewUTF8(`/data/${NAMES.nand}`), none = op1.stringToNewUTF8(profile?"/firmware.ldr":"");
+  const path = op1.stringToNewUTF8(`/data/${NAMES.nand}`), none = op1.stringToNewUTF8("");
   const NAND_SNAPSHOT = 2;
   if (op1._op1_start(path, none, snapshot ? NAND_SNAPSHOT : 0, 0, port ? audioMs : 0) !== 0)
     throw new Error("the emulator did not start (see the console)");
@@ -511,7 +502,9 @@ self.onmessage = ({ data }) => {
       }
       return;
   }
-  queue = queue.then(() => handle(data)).catch((e) =>
+  // All tabs see the same OPFS. Serialize staging, selection and cleanup
+  // with other workers, as well as preserving this worker's input order.
+  queue = queue.then(() => navigator.locks.request("op1emu-boot-storage", () => handle(data))).catch((e) =>
     post({ type: "error", command: data.type, text: e.message ?? String(e) }));
 };
 
@@ -519,6 +512,7 @@ async function handle(data) {
   switch (data.type) {
     case 'prepare-firmware':await prepareFirmware(data);break;
     case "files":
+      if (!handles) await reclaimObsoleteInputs(await directory(), await active());
       post({ type: "files", files: await files(), syncAccess });
       break;
     case "import":

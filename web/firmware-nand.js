@@ -2,7 +2,9 @@
 // Format references: yaffs2utils revision 1edc1688b7f8db140d2b85448dd68f9e6318dc95
 // (obj_hdr, packed tags, ECC definitions), and PR76 provision_nand.py.
 export const PAGE_SIZE = 2048, OOB_SIZE = 64, TOTAL_PAGES = 4096 * 64;
-export const START_PAGE = 132 * 64, DATA_SIZE = TOTAL_PAGES * PAGE_SIZE;
+const PAGES_PER_BLOCK = 64;
+const FIRMWARE_PAGE = 4 * PAGES_PER_BLOCK;
+export const START_PAGE = 132 * PAGES_PER_BLOCK, DATA_SIZE = TOTAL_PAGES * PAGE_SIZE;
 export const NAND_SIZE = TOTAL_PAGES * (PAGE_SIZE + OOB_SIZE);
 const encoder = new TextEncoder();
 const tick = () => new Promise(resolve => setTimeout(resolve, 0));
@@ -80,12 +82,48 @@ function spare(id, chunk, count) {
   d.setUint32(24, row >>> 0, true); d.setUint32(28, inverseRow >>> 0, true);
   return bytes;
 }
+// BF52x NAND boot ECC: a pair of 11-bit Hamming parities per 256 bytes,
+// packed into three little-endian bytes at the start of each 8-byte OOB slot.
+function bootSpare(page) {
+  const oob = new Uint8Array(OOB_SIZE).fill(255);
+  for (let sector = 0; sector < PAGE_SIZE / 256; sector++) {
+    let odd = 0, even = 0;
+    for (let byte = 0; byte < 256; byte++) {
+      const value = page[sector * 256 + byte];
+      for (let bit = 0; bit < 8; bit++) {
+        if (!(value & (1 << bit))) continue;
+        const position = byte * 8 + bit;
+        odd ^= position;
+        even ^= position ^ 0x7ff;
+      }
+    }
+    const code = odd | (even << 11);
+    oob.set([code & 255, (code >>> 8) & 255, code >>> 16], sector * 8);
+  }
+  return oob;
+}
+
+function bootStreams(bootloader, loader) {
+  if (bootloader === undefined && loader === undefined) return [];
+  // ROM starts at block 0. Stock TE-BOOT 2.30 calls the ROM NAND loader
+  // again starting at block 4. Factory YAFFS2 starts at block 132.
+  return [[bootloader, 0, FIRMWARE_PAGE], [loader, FIRMWARE_PAGE, START_PAGE]].map(([bytes, first, limit]) => {
+    if (!(bytes instanceof Uint8Array) || !bytes.length)
+      throw new Error('Both NAND boot streams are required');
+    // The ROM prefetches a 256-byte ECC sector beyond the last record.
+    const pages = Math.ceil((bytes.length + 256) / PAGE_SIZE);
+    if (first + pages > limit) throw new Error('Boot stream exceeds its NAND partition');
+    return {bytes, first, pages};
+  });
+}
+
 /** Stream to an OPFS synchronous access handle. Caller owns close and failure
  * cleanup. Payload views are not copied; working byte buffers use ~1 MiB plus
  * a page/OOB, and tree metadata is proportional to entry count. */
-export async function provisionNand(entries, handle, {onProgress, signal} = {}) {
+export async function provisionNand(entries, handle, {bootloader, loader, onProgress, signal} = {}) {
   checkAbort(signal);
   const {nodes, pages} = tree(entries);
+  const streams = bootStreams(bootloader, loader);
   if (!handle || !['write', 'truncate', 'flush'].every(k => typeof handle[k] === 'function')) throw new Error('A synchronous OPFS access handle is required');
   const write = (bytes, at) => {
     for (let offset = 0; offset < bytes.length;) {
@@ -101,6 +139,22 @@ export async function provisionNand(entries, handle, {onProgress, signal} = {}) 
     write(erased.subarray(0, Math.min(erased.length, NAND_SIZE - at)), at);
     onProgress?.({phase: 'erase', completed: Math.min(at + erased.length, NAND_SIZE), total: NAND_SIZE});
     await tick();
+  }
+  const totalBootPages = streams.reduce((count, stream) => count + stream.pages, 0);
+  let completedBootPages = 0;
+  for (const {bytes, first, pages: bootPages} of streams) {
+    for (let i = 0; i < bootPages; i++) {
+      const physical = first + i;
+      const data = new Uint8Array(PAGE_SIZE).fill(255);
+      data.set(bytes.subarray(i * PAGE_SIZE, (i + 1) * PAGE_SIZE));
+      write(data, physical * PAGE_SIZE);
+      write(bootSpare(data), DATA_SIZE + physical * OOB_SIZE);
+      completedBootPages++;
+      if (completedBootPages % PAGES_PER_BLOCK === 0 || completedBootPages === totalBootPages) {
+        onProgress?.({phase: 'boot', completed: completedBootPages, total: totalBootPages});
+        await tick();
+      }
+    }
   }
   let index = 0;
   const page = async (data, id, chunk, count) => {

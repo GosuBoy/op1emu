@@ -7,7 +7,7 @@ const main=fs.readFileSync(new URL('../main.js',import.meta.url),'utf8');
 const source=fs.readFileSync(new URL('../worker.js',import.meta.url),'utf8');
 const ref=name=>({path:[name],name:'nand.bin'});
 const manual={kind:'manual',nand:ref('manual'),otp:{path:['manual'],name:'otp.bin'}};
-const prepared={kind:'firmware',nand:ref('prepared'),ldr:{path:['prepared'],name:'plaintext.ldr'},pages:17};
+const prepared={kind:'firmware',nand:ref('prepared'),otp:{path:['prepared'],name:'otp.bin'},pages:17};
 function ui(running=false){
   const elements=new Map(),messages=[],statuses=[];
   let audioClosed=0;
@@ -36,27 +36,29 @@ function worker(config=manual){
     getDirectoryHandle:async name=>directory([...path,name]),removeEntry:async name=>removed.push([...path,name].join('/')),
   });
   const root=directory([]);
-  const context={self:{postMessage:m=>messages.push(m)},navigator:{storage:{getDirectory:async()=>root,estimate:async()=>({})}},MessageChannel:class{port1={};port2={postMessage(){}}},AbortController,DOMException,Uint8Array,Blob,console,crypto:webcrypto,
+  const context={self:{postMessage:m=>messages.push(m)},navigator:{locks:{request:(_name,run)=>run()},storage:{getDirectory:async()=>root,estimate:async()=>({})}},MessageChannel:class{port1={};port2={postMessage(){}}},AbortController,DOMException,Uint8Array,Blob,console,crypto:webcrypto,
     loadConfiguration:async()=>committed,commitConfiguration:async(_root,previous,next)=>committed={sequence:previous.sequence+1,config:next},
     inputFile:async(_root,ref)=>fileFor(ref),inputDirectory:async(_root,ref)=>directory(ref.path),
-    extractFirmware246:async()=>({loader:new Uint8Array([1]),entries:[{name:'content/sample'}]}),firmwareHash:async()=> 'plaintext',ENCRYPTED_246_SHA256:'encrypted',decryptLoader:loader=>({bytes:loader}),validateFirmware246:async()=>{},provisionNand(){},
+    MAX_INPUT_BYTES:64*1024*1024, INPUT_SIZES:{otp:8192,nand:553648128},
+    extractFirmware246:async()=>({loader:new Uint8Array([1]),bootloader:new Uint8Array([2]),entries:[{name:'content/sample'}]}),
+    provisionNand(){},reclaimObsoleteInputs:async()=>{},
     stageProfile:async()=>({name:'prepared',info:{pages:17}}),profileConfiguration:()=>prepared,PROFILES:'profiles',CONFIGURATIONS:'configs',MANUAL_INPUTS:'manual-inputs',
   };
   vm.createContext(context);
   vm.runInContext(source.replace(/^import .*?;\n/gms,'').replaceAll('import.meta.url',JSON.stringify('https://test.invalid/worker.js')),context);
   return {context,messages,root,opened,removed,run:code=>vm.runInContext(code,context),stored:()=>committed};
 }
-const prepare='prepareFirmware({requestId:7,file:{size:1,arrayBuffer:async()=>new ArrayBuffer(1)}})';
+const prepare='prepareFirmware({requestId:7,file:{size:1,arrayBuffer:async()=>new ArrayBuffer(1)},otpFile:{size:8192,arrayBuffer:async()=>new ArrayBuffer(8192)}})';
 test('prepared-only Export, COM and Start are enabled from the active UI description',async()=>{
   const w=worker(prepared),u=ui();const files=await w.run('files()');u.send({type:'files',files,syncAccess:true});
-  assert.equal(u.elements.get('start').disabled,false);assert.equal(u.elements.get('te-boot').disabled,false);assert.equal(u.elements.get('export-nand').disabled,false);assert.equal(u.elements.get('export-otp').disabled,true);
+  assert.equal(u.elements.get('start').disabled,false);assert.equal(u.elements.get('te-boot').disabled,false);assert.equal(u.elements.get('export-nand').disabled,false);assert.equal(u.elements.get('export-otp').disabled,false);
   assert.match(u.elements.get('firmware-state').textContent,/Active: firmware 246/);
   assert.equal((await w.run("exportFile('nand')")).identity,'prepared');
 });
 test('manual to prepared replaces the labels and Export only after successful preparation',async()=>{
   const w=worker();assert.equal((await w.run("exportFile('nand')")).identity,'manual');
   await w.run(prepare);assert.equal((await w.run('files()')).kind,'firmware');assert.equal((await w.run("exportFile('nand')")).identity,'prepared');
-  assert.equal(w.stored().config,prepared);await assert.rejects(w.run("exportFile('otp')"),/No active otp/);
+  assert.equal(w.stored().config,prepared);assert.equal((await w.run("exportFile('otp')")).identity,'prepared');
 });
 test('prepared to manual import selects only manual inputs; a second import completes it',async()=>{
   const w=worker(prepared);
@@ -71,7 +73,7 @@ test('Start opens precisely the active selection and Export keeps it after handl
     const w=worker(config);w.run("compileAhead=()=>Promise.resolve({});ensureBootRom=async()=>{};instantiate=async()=>{throw Error('native stub boundary')}");
     await assert.rejects(w.run('start({build:{}})'),/native stub boundary/);
     assert.equal(w.opened[0],`${config.nand.path[0]}/nand.bin`);
-    assert.equal(w.opened.some(n=>n.endsWith('/otp.bin')),config.kind==='manual');
+    assert.equal(w.opened.some(n=>n.endsWith('/otp.bin')),true);
     w.run('dataFs={flush(){}}');assert.deepEqual([...new Uint8Array(await(await w.run("exportFile('nand')")).arrayBuffer())],[42]);
     assert.equal((await w.run('files()')).kind,config.kind);
   }
@@ -98,8 +100,11 @@ test('repeated preparation replaces only on success and survives worker reload',
   w.context.stageProfile=async()=>{throw Error('disk full')};await assert.rejects(w.run(prepare),/disk full/);
   w.run('activeConfiguration=undefined');assert.equal((await w.run('files()')).kind,'firmware');assert.equal((await w.run("exportFile('nand')")).identity,'prepared');
 });
-test('encrypted input without local OTP fails without retrieval',async()=>{
-  const w=worker();w.context.firmwareHash=async()=> 'encrypted';await assert.rejects(w.run(prepare),/local OTP text file/);assert.equal(w.stored().config,manual);
+test('preparation requires a complete local OTP image before reading the package',async()=>{
+  const w=worker();
+  w.context.extractFirmware246=()=>{throw Error('must not parse firmware')};
+  await assert.rejects(w.run('prepareFirmware({requestId:7,file:{size:1},otpFile:{size:8191}})'),/8 KiB otp.bin/);
+  assert.equal(w.stored().config,manual);
 });
 test('generic storage errors preserve running state and audio',()=>{const u=ui(true);u.send({type:'error',command:'export',text:'failed export'});assert.equal(u.running(),true);assert.equal(u.run('started'),true);assert.equal(u.audioClosed(),0)});
 test('stopped and failed starts release input and audio but remain terminal',()=>{
@@ -126,14 +131,24 @@ test('failed manual import leaves prepared selection active',async()=>{
   assert.equal(w.stored().config,prepared);assert.equal((await w.run("exportFile('nand')")).identity,'prepared');
   assert.equal(w.removed.length,1);
 });
-test('legacy selection is pinned before a new profile can be staged',async()=>{
-  const w=worker(manual);w.context.loadConfiguration=async()=>({sequence:0,config:manual});
-  let commits=0;
-  const commit=w.context.commitConfiguration;
-  w.context.commitConfiguration=async(...args)=>{commits++;return commit(...args)};
-  w.context.stageProfile=async()=>{assert.equal(commits,1);assert.equal(w.stored().config,manual);throw Error('interrupted staging')};
-  await assert.rejects(w.run(prepare),/interrupted staging/);
-  assert.equal(w.stored().config,manual);assert.equal(w.stored().sequence,1);
+test('earlier direct-LDR selection remains exportable but prompts for a new boot pair',async()=>{
+  const {otp,...previous}=prepared;
+  const w=worker({...previous,ldr:{path:['prepared'],name:'plaintext.ldr'}});
+  const u=ui();
+  u.send({type:'files',files:await w.run('files()'),syncAccess:true});
+  assert.equal(u.elements.get('start').disabled,true);
+  assert.equal(u.elements.get('firmware-setup').open,true);
+  assert.equal(u.elements.get('export-nand').disabled,false);
+  assert.match(u.elements.get('firmware-state').textContent,/prepare again/);
+  await assert.rejects(w.run('start({build:{}})'),/matching 8 KiB OTP/);
+});
+test('preparation disclosure changes automatically only when readiness changes',()=>{
+  const u=ui(),send=ready=>u.send({type:'files',files:{ready},syncAccess:true});
+  send(false);assert.equal(u.elements.get('firmware-setup').open,true);
+  send(true);assert.equal(u.elements.get('firmware-setup').open,false);
+  u.elements.get('firmware-setup').open=true;
+  send(true);assert.equal(u.elements.get('firmware-setup').open,true);
+  send(false);assert.equal(u.elements.get('firmware-setup').open,true);
 });
 test('Export survives native instantiation failure before dataFs exists',async()=>{
   const w=worker(prepared);w.run("compileAhead=()=>Promise.resolve({});ensureBootRom=async()=>{};instantiate=async()=>{throw Error('instantiation failed')}");
@@ -187,9 +202,9 @@ test('queued COM level reaches native before the first slice for both selected b
     await atLoading;
     if(released)send({type:'com',bank:1,pin:2,pressed:false});
     assert.deepEqual(events,[]);finish();await w.run('queue');
-    assert.deepEqual(events,[['start','/data/nand.bin',config.kind==='firmware'?'/firmware.ldr':''],['key',1,2,released?0:1],['slice']]);
+    assert.deepEqual(events,[['start','/data/nand.bin',''],['key',1,2,released?0:1],['slice']]);
     assert.equal(w.opened[0],`${config.nand.path[0]}/nand.bin`);
-    assert.equal(w.opened.some(n=>n.endsWith('/otp.bin')),config.kind==='manual');
+    assert.equal(w.opened.some(n=>n.endsWith('/otp.bin')),true);
     assert.equal(w.messages.some(m=>m.type==='error'),false);
   }
 });

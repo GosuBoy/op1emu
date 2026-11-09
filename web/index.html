@@ -41,24 +41,19 @@
     <p><button id="start" class="primary" disabled>Start</button>
       <button id="te-boot" disabled>COM (hold)</button></p>
     <p class="setup">Hold COM to start in te-boot; release to let go of the key.</p>
-    <fieldset id="firmware-setup">
-      <legend>Prepare from firmware (experimental, original OP-1 version 246)</legend>
-      <p>Choose your original .op1 update instead of preparing a NAND image manually.
-        Decryption and factory-content provisioning happen locally. This creates a new
-        528 MiB NAND image and plaintext loader, like the desktop direct-LDR workflow.
-        Only successful preparation replaces the active boot configuration. Start, Export,
-        and the labels below always use that same configuration.</p>
-      <label>Firmware <input id="firmware-file" type="file" accept=".op1"></label>
-      <label>Local OTP text (required for encrypted firmware)
-        <input id="firmware-otp" type="file" accept=".txt"></label>
-      <p>Supply your own OTP text containing the decryption-key pages, which you are authorized
-        to use. This is not the complete 8 KiB otp.bin used by manual NAND boot.
-        No decryption material is downloaded or cached. Prepared firmware uses the emulator's
-        generated default chip identity, as a fresh desktop direct-LDR session does.</p>
+    <details id="firmware-setup" open>
+      <summary>Prepare from firmware (experimental)</summary>
+      <p>Choose the original OP-1 firmware 246 update and your own matching 8 KiB
+        OTP image. Prepare creates a 528 MiB NAND image with the bootloader,
+        original encrypted firmware, and factory content. Both files are stored
+        locally and can be exported below. A successful preparation replaces the
+        current boot configuration.</p>
+      <label>Firmware 246 <input id="firmware-file" type="file" accept=".op1"></label>
+      <label>Matching OTP image <input id="firmware-otp" type="file" accept=".bin"></label>
       <button id="prepare-firmware">Prepare firmware</button>
       <button id="cancel-firmware" disabled>Cancel</button>
-      <p id="firmware-state">No firmware profile prepared</p>
-    </fieldset>
+    </details>
+    <p id="firmware-state" aria-live="polite">Checking stored boot files…</p>
     <p>Alternatively, choose or drop your local 528 MiB NAND image and matching 8 KiB
       otp.bin. Manual import replaces the active configuration; both files are needed
       to start a manual NAND boot.</p>

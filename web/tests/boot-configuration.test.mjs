@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {loadConfiguration,commitConfiguration,inputFile,CONFIGURATIONS} from '../boot-configuration.js';
+import {loadConfiguration,commitConfiguration,inputFile,reclaimObsoleteInputs,CONFIGURATIONS,MANUAL_INPUTS} from '../boot-configuration.js';
 class Dir {
   kind='directory'; children=new Map(); failWrite=false;
   async getDirectoryHandle(name,{create=false}={}) {
@@ -66,8 +66,9 @@ test('failed first selection write preserves legacy inputs after reload',async()
   assert.deepEqual(await loadConfiguration(root),previous);
 });
 
-test('synthetic invalid firmware loader cannot replace valid selected inputs',async()=>{
+test('truncated legacy loader cannot replace valid selected inputs',async()=>{
   const {root,config}=await fixture();const previous=await commitConfiguration(root,await loadConfiguration(root),config);
+  (await root.getDirectoryHandle('selected')).children.get('plaintext.ldr').size=10;
   await commitConfiguration(root,previous,{kind:'firmware',nand:{path:['selected'],name:'nand.bin'},ldr:{path:['selected'],name:'plaintext.ldr'},pages:8});
   assert.deepEqual(await loadConfiguration(root),previous);
 });
@@ -90,4 +91,23 @@ test('cancellation while acquiring final selection handle preserves the previous
   await assert.rejects(pending,{name:'AbortError'});
   assert.equal(wrote,false);assert.equal(closed,true);assert.equal(dir.children.size,1);
   assert.deepEqual(await loadConfiguration(root),previous);
+});
+
+test('successful replacements reclaim superseded NAND, keep the reused OTP, and leave foreign files',async()=>{
+  const {root}=await fixture();
+  const dir=await root.getDirectoryHandle(MANUAL_INPUTS,{create:true});
+  dir.add('other.bin',553648128);
+  let previous=await loadConfiguration(root);
+  for(let i=0;i<3;i++){
+    const name=`nand-00000000-0000-0000-0000-00000000000${i}.bin`;
+    dir.add(name,553648128);
+    const next=await commitConfiguration(root,previous,{kind:'manual',nand:{path:[MANUAL_INPUTS],name},otp:previous.config.otp});
+    await reclaimObsoleteInputs(root,next);
+    assert.deepEqual([...dir.children.keys()],['other.bin',name]);
+    assert.equal(root.children.has('nand.bin'),false);
+    assert.equal(root.children.has('otp.bin'),true);
+    assert.deepEqual(await loadConfiguration(root),next);
+    previous=next;
+  }
+  assert.equal((await root.getDirectoryHandle(CONFIGURATIONS)).children.size,1);
 });

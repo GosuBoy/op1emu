@@ -119,3 +119,31 @@ test('independent mkyaffs2: complete page and translated OOB equivalence', {skip
     }
   } finally { await fs.rm(base,{recursive:true,force:true}); }
 });
+
+test('boot streams occupy blocks 0 and 4 with BF52x ECC and erased padding',async()=>{
+  const sink = new Sink();
+  const bootloader = new Uint8Array(PAGE_SIZE);
+  bootloader[0] = 1;
+  bootloader[256 + 255] = 128;
+  const loader = Uint8Array.of(0xad, 1, 2, 3);
+  const progress = [];
+  await provisionNand([file()], sink, {bootloader, loader, onProgress:p=>progress.push(p)});
+  assert.deepEqual(sink.records.get(0), bootloader);
+  assert.equal(hex(sink.records.get(DATA_SIZE).subarray(0, 16)), '00f83fffffffffffff0700ffffffffff');
+  assert.ok(sink.records.get(PAGE_SIZE).every(value=>value===255));
+  assert.equal(hex(sink.records.get(DATA_SIZE + OOB_SIZE).subarray(0, 8)), '000000ffffffffff');
+  assert.equal(sink.records.has(2*PAGE_SIZE), false);
+  const firmwarePage = 4 * 64;
+  assert.deepEqual(sink.records.get(firmwarePage*PAGE_SIZE).slice(0,4), loader);
+  assert.ok(sink.records.get(firmwarePage*PAGE_SIZE).slice(4).every(value=>value===255));
+  assert.equal(sink.data(0)[10], 'c'.charCodeAt(0));
+  assert.deepEqual(progress.find(p=>p.phase==='boot'), {phase:'boot',completed:3,total:3});
+});
+
+test('missing or overlapping boot streams are rejected before any writes',async()=>{
+  const sink = new Sink();
+  await assert.rejects(provisionNand([file()],sink,{loader:Uint8Array.of(1)}),/Both NAND boot streams/);
+  await assert.rejects(provisionNand([file()],sink,{bootloader:new Uint8Array(4*64*PAGE_SIZE),loader:Uint8Array.of(1)}),/partition/);
+  assert.equal(sink.writes,0);
+  assert.equal(sink.size,undefined);
+});

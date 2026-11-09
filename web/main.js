@@ -264,12 +264,17 @@ function bindInput() {
 let files = {};
 let preparing=false, preparationId=0;
 function showFiles(next) {
+  if (next.ready !== files.ready && next.ready !== undefined) {
+    $('firmware-setup').open = !next.ready;
+  }
   files = next;
   const describe = (file) =>
     file ? (file.open ? "in use" : `stored ${new Date(file.modified).toLocaleString()}`) : "not stored";
   $("nand-state").textContent = describe(files.nand);
   $("otp-state").textContent = describe(files.otp);
-  $('firmware-state').textContent=files.firmware?`Active: firmware 246 (${files.firmware.pages} NAND pages)`:files.kind==='manual'?'Active: manual NAND + OTP inputs':'No active boot configuration';
+  $('firmware-state').textContent=files.legacyFirmware ? 'Earlier firmware setup: prepare again with a matching OTP image to boot.' :
+    files.firmware ? `Active: firmware 246 (${files.firmware.pages} content pages)` :
+    files.kind === 'manual' ? 'Active: manual NAND and OTP inputs' : 'No active boot configuration';
   $('start').disabled=started||preparing||!files.ready;
   $('te-boot').disabled=(started&&!running)||preparing||!files.ready;
   for (const id of ["export-nand", "export-otp"]) $(id).disabled = !files[id.slice(7)];
@@ -289,9 +294,14 @@ function bindFiles() {
     if(preparing||started)return;
     const file=$('firmware-file').files[0];
     if(!file){setStatus('Choose an original OP-1 firmware 246 .op1 file first.',true);return;}
+    const otpFile = $('firmware-otp').files[0];
+    if (!otpFile || otpFile.size !== 8192) {
+      setStatus('Choose a matching 8 KiB otp.bin first.', true);
+      return;
+    }
     preparing=true;preparationId++;
     $('prepare-firmware').disabled=true;$('cancel-firmware').disabled=false;showFiles(files);
-    worker.postMessage({type:'prepare-firmware',requestId:preparationId,file,otpFile:$('firmware-otp').files[0]});
+    worker.postMessage({type:'prepare-firmware',requestId:preparationId,file,otpFile});
   });
   $('cancel-firmware').addEventListener('click',()=>worker.postMessage({type:'cancel-firmware',requestId:preparationId}));
   $("pick").addEventListener("change", (event) => {
@@ -386,7 +396,9 @@ globalThis.op1ModuleCached = moduleCached;  // for tools/smoke-browser.mjs
 const screen = $("screen").getContext("2d");
 worker.onmessage = ({ data }) => {
   switch(data.type){
-    case 'prepared':break;
+    case 'prepared':
+      $('cancel-firmware').disabled = true;
+      break;
     case 'preparing':
       preparing=data.value;
       $('prepare-firmware').disabled=preparing||started;

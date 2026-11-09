@@ -1,7 +1,7 @@
 // New OPFS generations commit last; never overwrite the user's legacy inputs.
-import {sha256, PLAINTEXT_246_SHA256} from './firmware-package.js';
+import {NAND_SIZE} from './firmware-nand.js';
 export const PROFILES = 'firmware-profiles';
-export const NAND_BYTES = 553648128;
+const LEGACY_LOADER_HASH = '1e806672dc440d495987c6b1f33b300876e6a3bb1d58254aac5fe60c960e906a';
 export async function writeBytes(dir, name, bytes, {signal} = {}) {
   const handle = await (await dir.getFileHandle(name, {create:true})).createSyncAccessHandle();
   try {
@@ -25,31 +25,32 @@ export async function findProfile(root) {
       const commit=await(await dir.getFileHandle('complete.json')).getFile();
       if(commit.size>4096)continue;
       const info=JSON.parse(await commit.text());
-      if(info.schema!==1||info.loaderHash!==PLAINTEXT_246_SHA256||!Number.isSafeInteger(info.created))continue;
+      if(info.schema!==1||info.loaderHash!==LEGACY_LOADER_HASH||!Number.isSafeInteger(info.created))continue;
       const nand=await(await dir.getFileHandle('nand.bin')).getFile();
       const ldr=await(await dir.getFileHandle('plaintext.ldr')).getFile();
-      if(nand.size!==NAND_BYTES||ldr.size!==2171624)continue;
-      if(await sha256(new Uint8Array(await ldr.arrayBuffer()))!==info.loaderHash)continue;
-      valid.push({name,dir,info});
+      if(nand.size!==NAND_SIZE||ldr.size!==2171624)continue;
+      valid.push({name,info,legacy:true});
     }catch{/* incomplete, corrupt, or locked generation */}
   }
   return valid.sort((a,b)=>b.info.created-a.info.created||b.name.localeCompare(a.name))[0]??null;
 }
-export async function stageProfile(root,loader,entries,provisionNand,{signal,onProgress}={}) {
-  const profiles=await root.getDirectoryHandle(PROFILES,{create:true});
-  const name=`profile-${Date.now()}-${crypto.randomUUID()}`;
-  const dir=await profiles.getDirectoryHandle(name,{create:true});
-  let committed=false;
+export async function stageProfile(root, {loader, bootloader, entries}, otp, provisionNand, {signal, onProgress} = {}) {
+  const profiles = await root.getDirectoryHandle(PROFILES, {create: true});
+  const name = `profile-${Date.now()}-${crypto.randomUUID()}`;
+  const dir = await profiles.getDirectoryHandle(name, {create: true});
+  let staged = false;
   try {
-    const nand=await(await dir.getFileHandle('nand.bin',{create:true})).createSyncAccessHandle();
-    let result;try{result=await provisionNand(entries,nand,{signal,onProgress});}finally{nand.close();}
-    signal?.throwIfAborted();
-    await writeBytes(dir,'plaintext.ldr',loader);
-    const loaderHash=await sha256(loader);
-    if(loaderHash!==PLAINTEXT_246_SHA256)throw new Error('Loader identity changed before storage');
-    signal?.throwIfAborted();
-    const info={schema:1,created:Date.now(),loaderHash,pages:result.pages,source:'original-op1-246'};
-    await writeBytes(dir,'complete.json',new TextEncoder().encode(JSON.stringify(info)));
-    committed=true;return {name,dir,info};
-  }finally{if(!committed)await profiles.removeEntry(name,{recursive:true}).catch(()=>{});}
+    const nand = await (await dir.getFileHandle('nand.bin', {create: true})).createSyncAccessHandle();
+    let result;
+    try {
+      result = await provisionNand(entries, nand, {loader, bootloader, signal, onProgress});
+    } finally {
+      nand.close();
+    }
+    await writeBytes(dir, 'otp.bin', otp, {signal});
+    staged = true;
+    return {name, info: {pages: result.pages}};
+  } finally {
+    if (!staged) await profiles.removeEntry(name, {recursive: true}).catch(() => {});
+  }
 }
